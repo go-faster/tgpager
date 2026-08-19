@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/go-faster/errors"
@@ -138,8 +139,26 @@ func finishFFmpeg(waitErr error, stderrCh <-chan []byte, lg *zap.Logger) error {
 	if len(stderr) > 0 {
 		lg.Debug("ffmpeg stderr", zap.ByteString("output", stderr))
 	}
-	if waitErr != nil {
-		return errors.Wrap(waitErr, "ffmpeg")
+	if waitErr == nil {
+		return nil
 	}
-	return nil
+	// ffmpeg reports the actual cause on stderr and only an opaque status
+	// code to Wait, so carry the tail of it into the error.
+	if reason := lastLines(stderr, 2); reason != "" {
+		return errors.Wrapf(waitErr, "ffmpeg: %s", reason)
+	}
+	return errors.Wrap(waitErr, "ffmpeg")
+}
+
+func lastLines(stderr []byte, n int) string {
+	var lines []string
+	for line := range strings.SplitSeq(string(stderr), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "; ")
 }

@@ -104,3 +104,36 @@ func TestFFmpegStreamerCancelled(t *testing.T) {
 type errStub string
 
 func (e errStub) Error() string { return string(e) }
+
+func TestFFmpegStreamerMissingFileReportsReason(t *testing.T) {
+	requireFFmpeg(t)
+
+	err := NewFFmpeg().Stream(t.Context(), func(*rtp.Packet) error {
+		return nil
+	}, filepath.Join(t.TempDir(), "nope.ogg"), WithLogger(zaptest.NewLogger(t)))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "No such file or directory",
+		"ffmpeg stderr must reach the error, not just the debug log")
+}
+
+func TestLastLines(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		n     int
+		want  string
+	}{
+		{"empty", "", 2, ""},
+		{"blank only", "\n  \n", 2, ""},
+		{"single", "boom", 2, "boom"},
+		{"trailing newline", "a\nb\n", 2, "a; b"},
+		{"truncates to last n", "a\nb\nc\nd", 2, "c; d"},
+		{"skips blanks", "a\n\n\nb\n", 2, "a; b"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, lastLines([]byte(tt.input), tt.n))
+		})
+	}
+}

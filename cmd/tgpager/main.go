@@ -88,6 +88,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, "audio is required")
 			os.Exit(1)
 		}
+		// Checked up front: otherwise a bad path only surfaces after a real
+		// call has been placed and answered.
+		if _, err := os.Stat(audioFile); err != nil {
+			fmt.Fprintf(os.Stderr, "audio file: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	cfg := zap.NewProductionConfig()
