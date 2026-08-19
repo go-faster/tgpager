@@ -127,6 +127,11 @@ func (c *Client) resolvePeer(ctx context.Context) error {
 	if _, isBot := user.ToBot(); isBot {
 		return errors.Errorf("peer %q is a bot, calls require a user", c.peer)
 	}
+	// Neither the API docs nor TDLib forbid calling your own account, so this
+	// is left to the server to accept or reject rather than blocked here.
+	if user.Self() {
+		c.lg.Warn("Peer is this account; Telegram may reject a call to self")
+	}
 
 	c.peerUser = user.InputUser()
 	name, _ := user.Username()
