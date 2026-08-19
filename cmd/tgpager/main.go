@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"time"
 
@@ -28,6 +29,7 @@ func main() {
 		peer           string
 		peerCache      string
 		token          string
+		login          bool
 		audioFile      string
 		ringTimeout    time.Duration
 		connectTimeout time.Duration
@@ -48,6 +50,7 @@ func main() {
 	flag.DurationVar(&connectTimeout, "connect-timeout", 30*time.Second, "How long an accepted call may take to negotiate media")
 	flag.IntVar(&attempts, "attempts", 3, "How many times to place a call before giving up")
 	flag.DurationVar(&retryDelay, "retry-delay", 10*time.Second, "Delay between call attempts")
+	flag.BoolVar(&login, "login", false, "Authenticate interactively, write the session file and exit")
 	flag.BoolVar(&debug, "debug", false, "Enable debug logging")
 	flag.Parse()
 	if appID == 0 {
@@ -75,19 +78,30 @@ func main() {
 	if peer == "" {
 		peer = os.Getenv("PEER")
 	}
-	if peer == "" {
-		fmt.Fprintln(os.Stderr, "peer is required")
-		os.Exit(1)
-	}
-	if audioFile == "" {
-		fmt.Fprintln(os.Stderr, "audio is required")
-		os.Exit(1)
+	// Logging in only needs credentials and somewhere to put the session.
+	if !login {
+		if peer == "" {
+			fmt.Fprintln(os.Stderr, "peer is required")
+			os.Exit(1)
+		}
+		if audioFile == "" {
+			fmt.Fprintln(os.Stderr, "audio is required")
+			os.Exit(1)
+		}
 	}
 
 	cfg := zap.NewProductionConfig()
 	if debug {
 		cfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 		cfg.EncoderConfig.TimeKey = zapcore.OmitKey
+	}
+
+	if login {
+		if err := runLogin(appID, appHash, sessionFile); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	app.Run(func(ctx context.Context, lg *zap.Logger, t *app.Telemetry) error {
@@ -153,6 +167,20 @@ func main() {
 			}
 		})
 	}, app.WithZapConfig(cfg))
+}
+
+// runLogin authenticates outside app.Run, so the terminal prompts are not
+// interleaved with server logs.
+func runLogin(appID int, appHash, sessionFile string) error {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	client := tgcall.New(appID, appHash, sessionFile)
+	if err := client.AuthFlow(ctx); err != nil {
+		return errors.Wrap(err, "authenticate")
+	}
+	fmt.Fprintf(os.Stderr, "Authenticated, session written to %s\n", sessionFile)
+	return nil
 }
 
 func processCall(ctx context.Context, lg *zap.Logger, client *tgcall.Client, streamer audio.Streamer, audioFile string, req server.CallRequest) {
