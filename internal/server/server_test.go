@@ -224,3 +224,51 @@ type errorReader struct{}
 func (e *errorReader) Read([]byte) (int, error) {
 	return 0, io.ErrUnexpectedEOF
 }
+
+func TestServerAuth(t *testing.T) {
+	const token = "s3cret"
+	body := `{"version":"4","groupKey":"g","status":"firing","alerts":[]}`
+
+	tests := []struct {
+		name   string
+		header string
+		want   int
+	}{
+		{"valid token", "Bearer " + token, http.StatusAccepted},
+		{"wrong token", "Bearer nope", http.StatusUnauthorized},
+		{"missing header", "", http.StatusUnauthorized},
+		{"wrong scheme", "Basic " + token, http.StatusUnauthorized},
+		{"bare token", token, http.StatusUnauthorized},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := New(10, WithLogger(zaptest.NewLogger(t)), WithToken(token))
+
+			req := httptest.NewRequest(http.MethodPost, "/alertmanager", strings.NewReader(body))
+			if tt.header != "" {
+				req.Header.Set("Authorization", tt.header)
+			}
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+
+			require.Equal(t, tt.want, rec.Code)
+		})
+	}
+}
+
+func TestServerRejectsOversizedBody(t *testing.T) {
+	srv := New(10, WithLogger(zaptest.NewLogger(t)))
+
+	body := strings.Repeat("a", maxBodySize+1)
+	req := httptest.NewRequest(http.MethodPost, "/alertmanager", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	select {
+	case <-srv.Queue():
+		t.Fatal("oversized body must not enqueue a call")
+	default:
+	}
+}

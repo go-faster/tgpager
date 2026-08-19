@@ -1,7 +1,9 @@
 package server
 
 import (
+	"crypto/subtle"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/go-faster/tgpager/internal/alertmanager"
@@ -12,8 +14,13 @@ type CallRequest struct {
 	GroupKey string
 }
 
+// maxBodySize bounds an Alertmanager payload. The webhook is unauthenticated
+// until a token is set, so the body is capped before it is buffered.
+const maxBodySize = 1 << 20
+
 type Server struct {
 	lg       *zap.Logger
+	token    string
 	queue    chan CallRequest
 	mu       sync.Mutex
 	inflight map[string]struct{}
@@ -28,6 +35,13 @@ func WithLogger(lg *zap.Logger) Option {
 	}
 }
 
+// WithToken requires callers to present the token as a bearer credential.
+func WithToken(token string) Option {
+	return func(s *Server) {
+		s.token = token
+	}
+}
+
 func New(queueSize int, opts ...Option) *Server {
 	s := &Server{
 		lg:       zap.NewNop(),
@@ -36,6 +50,9 @@ func New(queueSize int, opts ...Option) *Server {
 	}
 	for _, opt := range opts {
 		opt(s)
+	}
+	if s.token == "" {
+		s.lg.Warn("Webhook is unauthenticated, anyone who can reach it can place calls")
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /alertmanager", s.handleAlertmanager)
@@ -55,6 +72,19 @@ func (s *Server) Done(groupKey string) {
 	s.mu.Lock()
 	delete(s.inflight, groupKey)
 	s.mu.Unlock()
+}
+
+// authorized reports whether r carries the configured bearer token. With no
+// token configured every request is allowed.
+func (s *Server) authorized(r *http.Request) bool {
+	if s.token == "" {
+		return true
+	}
+	got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
 }
 
 func (s *Server) enqueue(req CallRequest) bool {
@@ -79,7 +109,13 @@ func (s *Server) enqueue(req CallRequest) bool {
 func (s *Server) handleAlertmanager(w http.ResponseWriter, r *http.Request) {
 	lg := s.lg.With(zap.String("remote", r.RemoteAddr))
 
-	payload, err := alertmanager.DecodeReader(r.Body)
+	if !s.authorized(r) {
+		lg.Warn("Rejected unauthorized webhook")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	payload, err := alertmanager.DecodeReader(http.MaxBytesReader(w, r.Body, maxBodySize))
 	if err != nil {
 		lg.Warn("Failed to decode alertmanager payload", zap.Error(err))
 		http.Error(w, "Bad request", http.StatusBadRequest)

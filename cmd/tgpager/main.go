@@ -9,8 +9,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-faster/errors"
 	"github.com/go-faster/sdk/app"
 	"github.com/go-faster/tgpager/internal/audio"
+	"github.com/go-faster/tgpager/internal/peercache"
 	"github.com/go-faster/tgpager/internal/server"
 	"github.com/go-faster/tgpager/internal/tgcall"
 	"go.uber.org/zap"
@@ -24,6 +26,8 @@ func main() {
 		appID          int
 		appHash        string
 		peer           string
+		peerCache      string
+		token          string
 		audioFile      string
 		ringTimeout    time.Duration
 		connectTimeout time.Duration
@@ -36,7 +40,9 @@ func main() {
 	flag.StringVar(&sessionFile, "session", "session.json", "Telegram session file path")
 	flag.IntVar(&appID, "app-id", 0, "Telegram app ID")
 	flag.StringVar(&appHash, "app-hash", "", "Telegram app hash")
-	flag.StringVar(&peer, "peer", "", "Call target: @username, phone number or t.me link")
+	flag.StringVar(&peer, "peer", "", "Call target: @username, phone, t.me link, or id:<user-id>[:<access-hash>]")
+	flag.StringVar(&token, "token", "", "Bearer token required from Alertmanager (default: unauthenticated)")
+	flag.StringVar(&peerCache, "peer-cache", "peers.bolt", "Path to the peer access hash cache")
 	flag.StringVar(&audioFile, "audio", "", "Path to audio file to play during call")
 	flag.DurationVar(&ringTimeout, "ring-timeout", 45*time.Second, "How long an unanswered call keeps ringing")
 	flag.DurationVar(&connectTimeout, "connect-timeout", 30*time.Second, "How long an accepted call may take to negotiate media")
@@ -56,6 +62,10 @@ func main() {
 	}
 	if appHash == "" {
 		appHash = os.Getenv("APP_HASH")
+	}
+
+	if token == "" {
+		token = os.Getenv("WEBHOOK_TOKEN")
 	}
 
 	if appID == 0 || appHash == "" {
@@ -81,19 +91,34 @@ func main() {
 	}
 
 	app.Run(func(ctx context.Context, lg *zap.Logger, t *app.Telemetry) error {
+		peerStorage, err := peercache.Open(peerCache)
+		if err != nil {
+			return errors.Wrap(err, "open peer cache")
+		}
+		defer func() {
+			if err := peerStorage.Close(); err != nil {
+				lg.Error("Failed to close peer cache", zap.Error(err))
+			}
+		}()
+
 		callClient := tgcall.New(appID, appHash, sessionFile,
 			tgcall.WithLogger(lg),
 			tgcall.WithPeer(peer),
+			tgcall.WithPeerStorage(peerStorage),
 			tgcall.WithRingTimeout(ringTimeout),
 			tgcall.WithConnectTimeout(connectTimeout),
 			tgcall.WithRetry(attempts, retryDelay),
 		)
 
-		srv := server.New(100, server.WithLogger(lg))
+		srv := server.New(100, server.WithLogger(lg), server.WithToken(token))
 
 		httpServer := &http.Server{
-			Addr:    addr,
-			Handler: srv,
+			Addr:              addr,
+			Handler:           srv,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       60 * time.Second,
 		}
 
 		streamer := audio.NewFFmpeg()
