@@ -9,6 +9,7 @@ require (
 	github.com/gotd/td v0.160.0
 	github.com/pion/rtp v1.10.3
 	github.com/stretchr/testify v1.11.1
+	go.etcd.io/bbolt v1.5.0
 	go.uber.org/zap v1.28.0
 )
 

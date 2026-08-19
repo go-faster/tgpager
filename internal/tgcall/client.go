@@ -30,8 +30,9 @@ type Client struct {
 	api     *tg.Client
 	peers   *peers.Manager
 
-	peer     string
-	peerUser tg.InputUserClass
+	peer        string
+	peerUser    tg.InputUserClass
+	peerStorage peers.Storage
 
 	ringTimeout    time.Duration
 	connectTimeout time.Duration
@@ -49,6 +50,12 @@ func WithLogger(lg *zap.Logger) Option {
 // resolved once the client is connected.
 func WithPeer(peer string) Option {
 	return func(c *Client) { c.peer = peer }
+}
+
+// WithPeerStorage persists resolved access hashes, so a peer stays callable
+// across restarts without re-resolving it.
+func WithPeerStorage(st peers.Storage) Option {
+	return func(c *Client) { c.peerStorage = st }
 }
 
 // WithRingTimeout bounds how long an unanswered call keeps ringing.
@@ -102,7 +109,10 @@ func (c *Client) init() {
 		Logger: zapToGotdLog(c.lg.Named("calls")),
 	})
 	c.calls.Register(dispatcher)
-	c.peers = peers.Options{Logger: zapToGotdLog(c.lg.Named("peers"))}.Build(c.api)
+	c.peers = peers.Options{
+		Storage: c.peerStorage,
+		Logger:  zapToGotdLog(c.lg.Named("peers")),
+	}.Build(c.api)
 }
 
 func (c *Client) Run(ctx context.Context, f func(ctx context.Context) error) error {
