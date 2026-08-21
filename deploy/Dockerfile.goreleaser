@@ -4,7 +4,9 @@ FROM alpine:3.21
 ARG TARGETPLATFORM
 
 # ffmpeg encodes the alert audio to Opus RTP, so it must be in the image.
-RUN apk add --no-cache ca-certificates tzdata ffmpeg \
+# curl is how the command TTS provider reaches an HTTP model server, and is
+# the only thing that can URL-encode an alert sentence: busybox wget cannot.
+RUN apk add --no-cache ca-certificates tzdata ffmpeg curl \
     && addgroup -S tgpager \
     && adduser -S tgpager -G tgpager -h /home/tgpager \
     # Created here so a named volume mounted on it inherits the owner. Docker

@@ -169,11 +169,13 @@ speaking the [Portal GLaDOS voice](https://huggingface.co/WarriorMama777/GLaDOS_
 so a page is announced by the voice most likely to be believed about a
 cascading failure.
 
-Upstream ships no image, so [deploy/glados/](deploy/glados) builds one. It is
-CPU-only: the README there is explicit that a GPU is needed for training, not
-synthesis. The first start downloads several GB of BERT models onto a volume,
-which is why its healthcheck allows ten minutes to come up. Drop the service
-and the `tts` section to page with the tone alone.
+Upstream publishes an image, `litagin/style-bert-vits2`, which ships no CMD
+because it is built to be driven; the compose file drives it and mounts the
+config in [deploy/glados/](deploy/glados). Synthesis runs on CPU, which is
+enough: upstream is explicit that a GPU is needed for training, not inference.
+The first start downloads several GB of BERT models onto a volume, which is why
+its healthcheck allows fifteen minutes to come up. Drop the service and the
+`tts` section to page with the tone alone.
 
 From `deploy/`:
 
@@ -184,6 +186,11 @@ $ printf '%s' "$WEBHOOK_TOKEN" > secrets/webhook_token
 $ cp /path/to/alert.ogg .
 $ $EDITOR tgpager.yml            # app_id and peer
 ```
+
+The voice itself is not vendored. Put the three files Style-Bert-VITS2 expects
+for it — the `.safetensors` checkpoint, `config.json` and `style_vectors.npy` —
+under `glados/model_assets/Portal_GLaDOS_v1/`. Any Style-Bert-VITS2 voice works;
+`model_name` in `tgpager.yml` is the directory name.
 
 Then log in once. It is interactive — Telegram sends a code — and it is the
 one step that cannot be automated:

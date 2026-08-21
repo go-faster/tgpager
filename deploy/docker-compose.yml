@@ -3,6 +3,46 @@
 name: tgpager
 
 services:
+  # Style-Bert-VITS2 serving the Portal GLaDOS voice. Optional: without it,
+  # drop the tts section from tgpager.yml and pages play the tone alone.
+  glados:
+    # Upstream's own image. It has no CMD: it is built to be driven, so we
+    # drive it. The command below matches 2.2, whose initialize.py differs
+    # from master's, so pin the tag once a newer one is published.
+    image: litagin/style-bert-vits2:latest
+    working_dir: /sbv2
+    # Only the BERT models are needed to synthesize. initialize.py in this
+    # version has no flag for that and would also pull the training bases, so
+    # the one function that matters is called directly.
+    command:
+      - sh
+      - -c
+      - python3 -c 'import initialize; initialize.download_bert_models()' && python3 server_fastapi.py
+    restart: unless-stopped
+    volumes:
+      - ./glados/config.yml:/sbv2/config.yml:ro
+      - ./glados/model_assets/Portal_GLaDOS_v1:/sbv2/model_assets/Portal_GLaDOS_v1:ro
+      # Several GB of BERT weights, fetched once on first start.
+      - glados-bert:/sbv2/bert
+    expose:
+      - "5000"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/docs')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # First start downloads the BERT weights before it can serve.
+      start_period: 900s
+    # Synthesis runs on CPU by default, so this stack starts anywhere. For a
+    # GPU, uncomment this and set server.device to cuda in glados/config.yml.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
   tgpager:
     image: ghcr.io/go-faster/tgpager:latest
     restart: unless-stopped
@@ -22,9 +62,14 @@ services:
       # config path and every command below needs no -config flag.
       - ./tgpager.yml:/home/tgpager/tgpager.yml:ro
       - ./alert.ogg:/home/tgpager/alert.ogg:ro
+    depends_on:
+      glados:
+        condition: service_healthy
     secrets:
       - telegram_app_hash
       - webhook_token
+      # Uncomment together with the entry below to run as a bot.
+      # - telegram_bot_token
     # There is no health endpoint; /metrics is the closest thing to one, and it
     # is enough to tell a live process from a wedged one.
     healthcheck:
@@ -39,6 +84,9 @@ secrets:
     file: ./secrets/telegram_app_hash
   webhook_token:
     file: ./secrets/webhook_token
+  # telegram_bot_token:
+  #   file: ./secrets/telegram_bot_token
 
 volumes:
   data:
+  glados-bert:

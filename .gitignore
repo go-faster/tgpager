@@ -17,3 +17,8 @@ tone.ogg
 # Docker deployment inputs, which are local and often secret.
 deploy/secrets/
 deploy/alert.ogg
+# Model weights, fetched per the README rather than vendored.
+deploy/glados/model_assets/
+# Local compose overrides, which carry an app_id and a peer.
+deploy/*.local.yml
+deploy/bot-voice.yml

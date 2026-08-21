@@ -7,6 +7,12 @@ telegram:
   # Docker mounts secrets as files, which is the spelling to use for them.
   app_hash:
     file: /run/secrets/telegram_app_hash
+  # Run as a bot instead of a user account: no -login step, no phone number,
+  # and the session is created on first start. Bots cannot place calls, so
+  # this only works with voice.mode "only" below, and the peer has to have
+  # started the bot once.
+  # bot_token:
+  #   file: /run/secrets/telegram_bot_token
   # On the named volume: this is what -login writes, and losing it means
   # logging in again.
   session: /home/tgpager/data/session.json
@@ -21,15 +27,38 @@ webhook:
     file: /run/secrets/webhook_token
 
 # A missed call records nothing; this leaves the page in the chat.
+# With bot_token set, use "only": a bot has no call to fall back from.
 voice:
   mode: fallback
 
-# Speech is optional. Without it a page plays the tone alone.
+# Speech, via the glados service. Style-Bert-VITS2 speaks its own HTTP shape
+# rather than the OpenAI one, so the command provider reaches it with curl.
+tts:
+  provider:
+    type: command
+    name: sh
+    args:
+      - -c
+      - exec curl -sf --get --data-urlencode "text=$1"
+          --data "model_name=Portal_GLaDOS_v1" --data "language=EN"
+          http://glados:5000/voice -o "$2"
+      - sh
+      - "{{text}}"
+      - "{{output}}"
+    output_format: wav
+  template: |
+    {{ .Status }} alert. {{ .CommonLabels.alertname }}.
+    Severity {{ .CommonLabels.severity }}. {{ .CommonAnnotations.summary }}
+  cache:
+    dir: /home/tgpager/data/tts-cache
+  # Synthesis is slower on CPU than a hosted API, and a page that waits is
+  # still better than a page that only beeps.
+  timeout: 60s
+
+# For a hosted provider instead, drop the glados service and use:
 # tts:
 #   provider:
 #     type: openai
 #     model: gpt-4o-mini-tts
 #     api_key:
 #       file: /run/secrets/openai_api_key
-#   cache:
-#     dir: /home/tgpager/data/tts-cache

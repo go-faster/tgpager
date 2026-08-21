@@ -1,0 +1,56 @@
+# The image's own config.yml with the server section replaced.
+# Config() wants the whole structure: a server-only file raises KeyError,
+# and the fallback it then reaches for is not in the image.
+#
+# Upstream serves Japanese and caps input at 100 characters, which a real
+# alert sentence exceeds. Set device to cpu to run without a GPU.
+model_name: model_name
+resample:
+  sampling_rate: 44100
+  in_dir: raw
+  out_dir: wavs
+preprocess_text:
+  transcription_path: esd.list
+  cleaned_path: ''
+  train_path: train.list
+  val_path: val.list
+  config_path: config.json
+  val_per_lang: 0
+  max_val_total: 12
+  clean: true
+bert_gen:
+  config_path: config.json
+  num_processes: 2
+  device: cuda
+  use_multi_device: false
+style_gen:
+  config_path: config.json
+  num_processes: 4
+  device: cuda
+train_ms:
+  env:
+    MASTER_ADDR: localhost
+    MASTER_PORT: 10086
+    WORLD_SIZE: 1
+    LOCAL_RANK: 0
+    RANK: 0
+  model_dir: models
+  config_path: config.json
+  num_workers: 16
+  spec_cache: true
+  keep_ckpts: 1
+webui:
+  device: cuda
+  model: models/G_8000.pth
+  config_path: config.json
+  port: 7860
+  share: false
+  debug: false
+  language_identification_library: langid
+server:
+  port: 5000
+  device: cpu
+  language: EN
+  limit: 1000
+  origins:
+  - '*'
