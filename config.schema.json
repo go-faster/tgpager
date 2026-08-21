@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "audio": {
+      "description": "Audio file played into the call.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "call": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "default": 3,
+          "description": "How many times to place a call before giving up.",
+          "maximum": 100,
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "connect_timeout": {
+          "default": "30s",
+          "description": "How long an accepted call may take to negotiate media.",
+          "format": "duration",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retry_delay": {
+          "default": "10s",
+          "description": "Delay between call attempts.",
+          "format": "duration",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ring_timeout": {
+          "default": "45s",
+          "description": "How long an unanswered call keeps ringing.",
+          "format": "duration",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "debug": {
+      "default": false,
+      "description": "Enable debug logging.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "peer": {
+      "description": "Call target: @username, phone, t.me link, or id:\u003cuser-id\u003e[:\u003caccess-hash\u003e].",
+      "minLength": 1,
+      "type": "string"
+    },
+    "peer_cache": {
+      "default": "peers.bolt",
+      "description": "Path to the peer access hash cache. Account-scoped.",
+      "minLength": 1,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "telegram": {
+      "additionalProperties": false,
+      "properties": {
+        "app_hash": {
+          "description": "Telegram application hash.",
+          "minLength": 1,
+          "type": "string",
+          "writeOnly": true
+        },
+        "app_id": {
+          "description": "Telegram application ID.",
+          "maximum": 2147483647,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "session": {
+          "default": "session.json",
+          "description": "Path to the session file. Holds credentials; keep it private.",
+          "minLength": 1,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "app_id",
+        "app_hash"
+      ],
+      "type": "object"
+    },
+    "webhook": {
+      "additionalProperties": false,
+      "properties": {
+        "addr": {
+          "default": ":8080",
+          "description": "HTTP listen address.",
+          "minLength": 1,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "queue_size": {
+          "default": 100,
+          "description": "How many pages may wait to be placed.",
+          "maximum": 10000,
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "token": {
+          "description": "Bearer token required from Alertmanager. Unset means unauthenticated.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "writeOnly": true
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "telegram",
+    "peer",
+    "audio"
+  ],
+  "title": "tgpager configuration",
+  "type": "object"
+}

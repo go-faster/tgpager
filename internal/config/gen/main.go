@@ -10,16 +10,28 @@ import (
 )
 
 func main() {
-	out := flag.String("out", "CONFIG.md", "output path")
+	out := flag.String("out", "CONFIG.md", "Markdown reference output path")
+	schemaOut := flag.String("schema-out", "config.schema.json", "JSON Schema output path")
 	flag.Parse()
 
 	page, err := config.Reference()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		fail(err)
 	}
 	if err := os.WriteFile(*out, page, 0o600); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		fail(err)
 	}
+
+	schema, err := config.JSONSchema()
+	if err != nil {
+		fail(err)
+	}
+	if err := os.WriteFile(*schemaOut, schema, 0o600); err != nil {
+		fail(err)
+	}
+}
+
+func fail(err error) {
+	fmt.Fprintln(os.Stderr, err)
+	os.Exit(1)
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/go-faster/errors"
 	"github.com/go-faster/figureout"
 	"github.com/go-faster/figureout/schema/docs"
+	"github.com/go-faster/figureout/schema/jsonschema"
 	"github.com/go-faster/figureout/source/env"
 	"github.com/go-faster/figureout/source/yaml"
 )
@@ -133,4 +134,18 @@ func Reference() ([]byte, error) {
 		return nil, errors.Wrap(err, "generate reference")
 	}
 	return page, nil
+}
+
+// JSONSchema renders the JSON Schema for [Descriptor], for editor completion
+// and for validating a configuration file in CI.
+func JSONSchema() ([]byte, error) {
+	schema, _, err := jsonschema.Generate(Descriptor,
+		jsonschema.Title("tgpager configuration"),
+		jsonschema.Semantic(),
+		jsonschema.ForSource(yaml.Source),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "generate json schema")
+	}
+	return schema, nil
 }

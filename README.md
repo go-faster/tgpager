@@ -30,7 +30,13 @@ tgpager -config tgpager.yml
 ```
 
 Every setting is documented in [CONFIG.md](CONFIG.md) and may be given in YAML
-or as an environment variable, which wins. Credentials are omitted from that
+or as an environment variable, which wins. [config.schema.json](config.schema.json)
+gives editors completion and validation:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/go-faster/tgpager/main/config.schema.json
+```
+ Credentials are omitted from that
 generated reference so their values can never be formatted into an error; they
 are:
 
