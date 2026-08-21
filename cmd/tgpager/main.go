@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"time"
 
 	"github.com/go-faster/errors"
@@ -17,6 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/go-faster/tgpager/internal/audio"
+	"github.com/go-faster/tgpager/internal/config"
 	"github.com/go-faster/tgpager/internal/peercache"
 	"github.com/go-faster/tgpager/internal/server"
 	"github.com/go-faster/tgpager/internal/tgcall"
@@ -24,185 +24,136 @@ import (
 
 func main() {
 	var (
-		addr           string
-		sessionFile    string
-		appID          int
-		appHash        string
-		peer           string
-		peerCache      string
-		token          string
-		login          bool
-		audioFile      string
-		ringTimeout    time.Duration
-		connectTimeout time.Duration
-		attempts       int
-		retryDelay     time.Duration
-		debug          bool
+		configPath string
+		login      bool
 	)
-
-	flag.StringVar(&addr, "addr", ":8080", "HTTP listen address")
-	flag.StringVar(&sessionFile, "session", "session.json", "Telegram session file path")
-	flag.IntVar(&appID, "app-id", 0, "Telegram app ID")
-	flag.StringVar(&appHash, "app-hash", "", "Telegram app hash")
-	flag.StringVar(&peer, "peer", "", "Call target: @username, phone, t.me link, or id:<user-id>[:<access-hash>]")
-	flag.StringVar(&token, "token", "", "Bearer token required from Alertmanager (default: unauthenticated)")
-	flag.StringVar(&peerCache, "peer-cache", "peers.bolt", "Path to the peer access hash cache")
-	flag.StringVar(&audioFile, "audio", "", "Path to audio file to play during call")
-	flag.DurationVar(&ringTimeout, "ring-timeout", 45*time.Second, "How long an unanswered call keeps ringing")
-	flag.DurationVar(&connectTimeout, "connect-timeout", 30*time.Second, "How long an accepted call may take to negotiate media")
-	flag.IntVar(&attempts, "attempts", 3, "How many times to place a call before giving up")
-	flag.DurationVar(&retryDelay, "retry-delay", 10*time.Second, "Delay between call attempts")
+	flag.StringVar(&configPath, "config", "tgpager.yml", "Path to the configuration file")
 	flag.BoolVar(&login, "login", false, "Authenticate interactively, write the session file and exit")
-	flag.BoolVar(&debug, "debug", false, "Enable debug logging")
 	flag.Parse()
-	if appID == 0 {
-		if envAppID := os.Getenv("APP_ID"); envAppID != "" {
-			parsed, err := strconv.Atoi(envAppID)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "APP_ID must be an integer")
-				os.Exit(1)
-			}
-			appID = parsed
-		}
-	}
-	if appHash == "" {
-		appHash = os.Getenv("APP_HASH")
-	}
 
-	if token == "" {
-		token = os.Getenv("WEBHOOK_TOKEN")
-	}
-
-	if appID == 0 || appHash == "" {
-		fmt.Fprintln(os.Stderr, "app-id/app-hash or APP_ID/APP_HASH are required")
+	cfg, _, err := config.Load(configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
-	}
-	if peer == "" {
-		peer = os.Getenv("PEER")
-	}
-	// Logging in only needs credentials and somewhere to put the session.
-	if !login {
-		if peer == "" {
-			fmt.Fprintln(os.Stderr, "peer is required")
-			os.Exit(1)
-		}
-		if audioFile == "" {
-			fmt.Fprintln(os.Stderr, "audio is required")
-			os.Exit(1)
-		}
-		// Checked up front: otherwise a bad path only surfaces after a real
-		// call has been placed and answered.
-		if _, err := os.Stat(audioFile); err != nil {
-			fmt.Fprintf(os.Stderr, "audio file: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	cfg := zap.NewProductionConfig()
-	if debug {
-		cfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
-		cfg.EncoderConfig.TimeKey = zapcore.OmitKey
 	}
 
 	if login {
-		if err := runLogin(appID, appHash, sessionFile); err != nil {
+		if err := runLogin(cfg.Telegram); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
 
+	// Checked up front: otherwise a bad path only surfaces after a real call
+	// has been placed and answered.
+	if _, err := os.Stat(cfg.Audio); err != nil {
+		fmt.Fprintf(os.Stderr, "audio file: %v\n", err)
+		os.Exit(1)
+	}
+
+	zapCfg := zap.NewProductionConfig()
+	if cfg.Debug {
+		zapCfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+		zapCfg.EncoderConfig.TimeKey = zapcore.OmitKey
+	}
+
 	app.Run(func(ctx context.Context, lg *zap.Logger, t *app.Telemetry) error {
-		peerStorage, err := peercache.Open(peerCache)
-		if err != nil {
-			return errors.Wrap(err, "open peer cache")
+		return run(ctx, lg, t, cfg)
+	}, app.WithZapConfig(zapCfg))
+}
+
+func run(ctx context.Context, lg *zap.Logger, t *app.Telemetry, cfg config.Config) error {
+	peerStorage, err := peercache.Open(cfg.PeerCache)
+	if err != nil {
+		return errors.Wrap(err, "open peer cache")
+	}
+	defer func() {
+		if err := peerStorage.Close(); err != nil {
+			lg.Error("Failed to close peer cache", zap.Error(err))
 		}
-		defer func() {
-			if err := peerStorage.Close(); err != nil {
-				lg.Error("Failed to close peer cache", zap.Error(err))
-			}
-		}()
+	}()
 
-		callClient := tgcall.New(appID, appHash, sessionFile,
-			tgcall.WithLogger(lg),
-			tgcall.WithTracerProvider(t.TracerProvider()),
-			tgcall.WithMeterProvider(t.MeterProvider()),
-			tgcall.WithPeer(peer),
-			tgcall.WithPeerStorage(peerStorage),
-			tgcall.WithRingTimeout(ringTimeout),
-			tgcall.WithConnectTimeout(connectTimeout),
-			tgcall.WithRetry(attempts, retryDelay),
-		)
+	callClient := tgcall.New(cfg.Telegram.AppID, cfg.Telegram.AppHash, cfg.Telegram.Session,
+		tgcall.WithLogger(lg),
+		tgcall.WithTracerProvider(t.TracerProvider()),
+		tgcall.WithMeterProvider(t.MeterProvider()),
+		tgcall.WithPeer(cfg.Peer),
+		tgcall.WithPeerStorage(peerStorage),
+		tgcall.WithRingTimeout(cfg.Call.RingTimeout),
+		tgcall.WithConnectTimeout(cfg.Call.ConnectTimeout),
+		tgcall.WithRetry(cfg.Call.Attempts, cfg.Call.RetryDelay),
+	)
 
-		srv := server.New(100,
-			server.WithLogger(lg),
-			server.WithToken(token),
-			server.WithMeterProvider(t.MeterProvider()),
-		)
+	token, _ := cfg.Webhook.Token.Value()
+	srv := server.New(cfg.Webhook.QueueSize,
+		server.WithLogger(lg),
+		server.WithToken(token),
+		server.WithMeterProvider(t.MeterProvider()),
+	)
 
-		httpServer := &http.Server{
-			Addr:              addr,
-			Handler:           srv,
-			ReadHeaderTimeout: 5 * time.Second,
-			ReadTimeout:       30 * time.Second,
-			WriteTimeout:      30 * time.Second,
-			IdleTimeout:       60 * time.Second,
+	httpServer := &http.Server{
+		Addr:              cfg.Webhook.Addr,
+		Handler:           srv,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	streamer := audio.NewFFmpeg()
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		lg.Info("Serving webhooks", zap.String("addr", cfg.Webhook.Addr))
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return errors.Wrap(err, "serve http")
 		}
+		return nil
+	})
 
-		streamer := audio.NewFFmpeg()
+	g.Go(func() error {
+		<-ctx.Done()
+		// Shutdown needs a live context, the group's is already canceled.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			return errors.Wrap(err, "shutdown http")
+		}
+		return nil
+	})
 
-		g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return callClient.Run(ctx, func(ctx context.Context) error {
+			lg.Info("Telegram client ready")
 
-		g.Go(func() error {
-			lg.Info("Serving webhooks", zap.String("addr", addr))
-			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				return errors.Wrap(err, "serve http")
-			}
-			return nil
-		})
-
-		g.Go(func() error {
-			<-ctx.Done()
-			// Shutdown needs a live context, the group's is already canceled.
-			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-			defer cancel()
-			if err := httpServer.Shutdown(shutdownCtx); err != nil {
-				return errors.Wrap(err, "shutdown http")
-			}
-			return nil
-		})
-
-		g.Go(func() error {
-			return callClient.Run(ctx, func(ctx context.Context) error {
-				lg.Info("Telegram client ready")
-
-				for {
-					select {
-					case <-ctx.Done():
-						return nil
-					case req := <-srv.Queue():
-						processCall(ctx, lg, callClient, streamer, audioFile, req)
-						srv.Done(req.GroupKey)
-					}
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				case req := <-srv.Queue():
+					processCall(ctx, lg, callClient, streamer, cfg.Audio, req)
+					srv.Done(req.GroupKey)
 				}
-			})
+			}
 		})
+	})
 
-		return g.Wait()
-	}, app.WithZapConfig(cfg))
+	return g.Wait()
 }
 
 // runLogin authenticates outside app.Run, so the terminal prompts are not
 // interleaved with server logs.
-func runLogin(appID int, appHash, sessionFile string) error {
+func runLogin(tg config.Telegram) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	client := tgcall.New(appID, appHash, sessionFile)
+	client := tgcall.New(tg.AppID, tg.AppHash, tg.Session)
 	if err := client.AuthFlow(ctx); err != nil {
 		return errors.Wrap(err, "authenticate")
 	}
-	fmt.Fprintf(os.Stderr, "Authenticated, session written to %s\n", sessionFile)
+	fmt.Fprintf(os.Stderr, "Authenticated, session written to %s\n", tg.Session)
 	return nil
 }
 

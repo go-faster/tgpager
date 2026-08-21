@@ -13,10 +13,31 @@ go install github.com/go-faster/tgpager/cmd/tgpager@latest
 Calls are placed from a Telegram **user** account, so a session is required
 once up front. Bots cannot place calls.
 
-```console
-tgpager -app-id $APP_ID -app-hash $APP_HASH -login
-tgpager -app-id $APP_ID -app-hash $APP_HASH -peer @oncall -audio alert.ogg -token secret
+```yaml
+# tgpager.yml
+telegram:
+  app_id: 123456
+  app_hash: "..."      # or TGPAGER_TELEGRAM_APP_HASH
+peer: "@oncall"
+audio: alert.ogg
+webhook:
+  token: "secret"      # or TGPAGER_WEBHOOK_TOKEN
 ```
+
+```console
+tgpager -login                    # once, interactive
+tgpager -config tgpager.yml
+```
+
+Every setting is documented in [CONFIG.md](CONFIG.md) and may be given in YAML
+or as an environment variable, which wins. Credentials are omitted from that
+generated reference so their values can never be formatted into an error; they
+are:
+
+| Setting | Environment |
+| --- | --- |
+| `telegram.app_hash` | `TGPAGER_TELEGRAM_APP_HASH` |
+| `webhook.token` | `TGPAGER_WEBHOOK_TOKEN` |
 
 Point an Alertmanager receiver at it:
 
