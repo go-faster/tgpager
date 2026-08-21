@@ -80,3 +80,81 @@ func TestLoadValidates(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadTTS(t *testing.T) {
+	cfg, _, err := Load(writeYAML(t, `
+telegram: {app_id: 1, app_hash: h}
+peer: "@x"
+audio: tone.ogg
+tts:
+  provider:
+    type: openai
+    base_url: https://openrouter.ai/api/v1
+    model: openai/gpt-4o-mini-tts
+    instructions: Speak urgently and clearly.
+    dialect: openrouter
+    speed: 0.9
+  repeat: 2
+`))
+	require.NoError(t, err)
+
+	tts, ok := cfg.TTS.Value()
+	require.True(t, ok)
+	require.NotNil(t, tts.Provider.OpenAI)
+	require.Nil(t, tts.Provider.Command, "only the selected variant is populated")
+	require.Equal(t, "Speak urgently and clearly.", tts.Provider.OpenAI.Instructions)
+	require.Equal(t, DialectOpenRouter, tts.Provider.OpenAI.Dialect)
+	require.Equal(t, 2, tts.Repeat)
+	require.Equal(t, 10*time.Second, tts.Timeout, "shared default applies")
+
+	speed, ok := tts.Provider.OpenAI.Speed.Value()
+	require.True(t, ok)
+	require.InDelta(t, 0.9, speed, 0.001)
+}
+
+func TestLoadTTSAbsentMeansDisabled(t *testing.T) {
+	cfg, _, err := Load(writeYAML(t, `
+telegram: {app_id: 1, app_hash: h}
+peer: "@x"
+audio: tone.ogg
+`))
+	require.NoError(t, err)
+
+	_, ok := cfg.TTS.Value()
+	require.False(t, ok, "no tts section means speech is off")
+}
+
+func TestLoadTTSCommandVariant(t *testing.T) {
+	cfg, _, err := Load(writeYAML(t, `
+telegram: {app_id: 1, app_hash: h}
+peer: "@x"
+audio: tone.ogg
+tts:
+  provider:
+    type: command
+    name: piper
+    args: ["--model", "en.onnx", "--output_file", "{{output}}"]
+`))
+	require.NoError(t, err)
+
+	tts, ok := cfg.TTS.Value()
+	require.True(t, ok)
+	require.NotNil(t, tts.Provider.Command)
+	require.Nil(t, tts.Provider.OpenAI)
+	require.Equal(t, "piper", tts.Provider.Command.Name)
+	require.Equal(t, "wav", tts.Provider.Command.OutputFormat)
+}
+
+func TestLoadTTSRejectsBadDialect(t *testing.T) {
+	_, _, err := Load(writeYAML(t, `
+telegram: {app_id: 1, app_hash: h}
+peer: "@x"
+audio: tone.ogg
+tts:
+  provider:
+    type: openai
+    model: m
+    dialect: azure
+`))
+	require.Error(t, err, "an unknown dialect would silently drop instructions")
+}

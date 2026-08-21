@@ -129,6 +129,17 @@ Rendered text is capped in length. Alert labels come from metrics and are
 attacker-influenceable, and an unbounded label should not turn into an
 unbounded bill.
 
+## Delivery
+
+`instructions` steers how the line is read — "Speak urgently and clearly" — on
+models that support it. The wire shape differs: OpenAI takes it at the top
+level, OpenRouter nests it under `provider.options.openai`. A `dialect` field
+says which, rather than the code guessing from the URL. `speed` is optional,
+because zero is a real multiplier and not a way to say "unset".
+
+Both feed the cache fingerprint along with model and voice: changing how a line
+is delivered must not serve the previous recording.
+
 ## Caching
 
 Alertmanager resends a firing alert every `repeat_interval`, so an uncached

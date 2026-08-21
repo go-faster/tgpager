@@ -58,13 +58,17 @@ func Build(cfg config.Config, opts BuildOptions) (*Speaker, error) {
 func newSynthesizer(cfg config.TTS) (Synthesizer, error) {
 	switch p := cfg.Provider; {
 	case p.OpenAI != nil:
+		speed, _ := p.OpenAI.Speed.Value()
 		return NewOpenAI(OpenAIOptions{
-			BaseURL: p.OpenAI.BaseURL,
-			APIKey:  p.OpenAI.APIKey,
-			Model:   p.OpenAI.Model,
-			Voice:   p.OpenAI.Voice,
-			Format:  p.OpenAI.Format,
-			Timeout: cfg.Timeout,
+			BaseURL:      p.OpenAI.BaseURL,
+			APIKey:       p.OpenAI.APIKey,
+			Model:        p.OpenAI.Model,
+			Voice:        p.OpenAI.Voice,
+			Format:       p.OpenAI.Format,
+			Instructions: p.OpenAI.Instructions,
+			Speed:        speed,
+			Dialect:      Dialect(p.OpenAI.Dialect),
+			Timeout:      cfg.Timeout,
 		})
 	case p.Command != nil:
 		return NewCommand(CommandOptions{

@@ -112,3 +112,99 @@ func TestOpenAIFingerprintSeparatesVoices(t *testing.T) {
 func decodeJSON(r *http.Request, v any) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }
+
+func TestOpenAIInstructionsDialect(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect Dialect
+		want    string
+	}{
+		{
+			"openai puts it top level", DialectOpenAI,
+			`{"model":"m","input":"text","instructions":"Speak urgently."}`,
+		},
+		{
+			"openrouter nests it", DialectOpenRouter,
+			`{"model":"m","input":"text","provider":{"options":{"openai":{"instructions":"Speak urgently."}}}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o, err := NewOpenAI(OpenAIOptions{
+				Model:        "m",
+				Format:       "",
+				Instructions: "Speak urgently.",
+				Dialect:      tt.dialect,
+			})
+			require.NoError(t, err)
+			o.opts.Format = "" // keep the fixture focused on instructions
+
+			body, err := json.Marshal(o.buildRequest("text"))
+			require.NoError(t, err)
+			require.JSONEq(t, tt.want, string(body))
+		})
+	}
+}
+
+func TestOpenAISendsInstructionsOverTheWire(t *testing.T) {
+	var raw map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&raw))
+		_, _ = w.Write([]byte("audio"))
+	}))
+	defer srv.Close()
+
+	o, err := NewOpenAI(OpenAIOptions{
+		BaseURL:      srv.URL,
+		Model:        "m",
+		Instructions: "Speak urgently and clearly.",
+		Speed:        0.9,
+		Dialect:      DialectOpenRouter,
+	})
+	require.NoError(t, err)
+
+	_, err = o.Synthesize(t.Context(), "text")
+	require.NoError(t, err)
+
+	provider, ok := raw["provider"].(map[string]any)
+	require.True(t, ok, "openrouter dialect must nest instructions")
+	options := provider["options"].(map[string]any)
+	openai := options["openai"].(map[string]any)
+	require.Equal(t, "Speak urgently and clearly.", openai["instructions"])
+	require.NotContains(t, raw, "instructions", "must not also send it top level")
+	require.InDelta(t, 0.9, raw["speed"], 0.001)
+}
+
+func TestOpenAIValidatesSpeedAndDialect(t *testing.T) {
+	_, err := NewOpenAI(OpenAIOptions{Model: "m", Speed: 9})
+	require.Error(t, err, "speed out of range")
+
+	_, err = NewOpenAI(OpenAIOptions{Model: "m", Speed: 0.1})
+	require.Error(t, err)
+
+	_, err = NewOpenAI(OpenAIOptions{Model: "m", Dialect: "azure"})
+	require.Error(t, err, "an unknown dialect would silently drop instructions")
+
+	_, err = NewOpenAI(OpenAIOptions{Model: "m", Speed: 1.5})
+	require.NoError(t, err)
+}
+
+// TestOpenAIFingerprintCoversDelivery guards the cache: a changed instruction
+// or speed must not serve the previous recording.
+func TestOpenAIFingerprintCoversDelivery(t *testing.T) {
+	base := OpenAIOptions{Model: "m", Voice: "alloy"}
+
+	mk := func(mutate func(*OpenAIOptions)) string {
+		opts := base
+		mutate(&opts)
+		o, err := NewOpenAI(opts)
+		require.NoError(t, err)
+		return o.Fingerprint()
+	}
+
+	original := mk(func(*OpenAIOptions) {})
+	require.NotEqual(t, original, mk(func(o *OpenAIOptions) { o.Instructions = "Speak calmly." }))
+	require.NotEqual(t, original, mk(func(o *OpenAIOptions) { o.Speed = 1.5 }))
+	require.NotEqual(t, original, mk(func(o *OpenAIOptions) { o.Dialect = DialectOpenRouter }))
+}

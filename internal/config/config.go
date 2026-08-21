@@ -3,6 +3,8 @@
 package config
 
 import (
+	"iter"
+	"slices"
 	"time"
 
 	"github.com/go-faster/errors"
@@ -42,11 +44,29 @@ type Webhook struct {
 // OpenAITTS is an OpenAI-compatible /audio/speech endpoint. BaseURL selects
 // the vendor: OpenAI, OpenRouter, Azure or a local compatible server.
 type OpenAITTS struct {
-	BaseURL string
-	APIKey  string
-	Model   string
-	Voice   string
-	Format  string
+	BaseURL      string
+	APIKey       string
+	Model        string
+	Voice        string
+	Format       string
+	Instructions string
+	Speed        figureout.OptionalOf[float64]
+	Dialect      TTSDialect
+}
+
+// TTSDialect selects where instructions go on the wire. Everything else about
+// an OpenAI-compatible endpoint is shared.
+type TTSDialect string
+
+// Dialects.
+const (
+	DialectOpenAI     TTSDialect = "openai"
+	DialectOpenRouter TTSDialect = "openrouter"
+)
+
+// AllValues implements [figureout.EnumValuer].
+func (TTSDialect) AllValues() iter.Seq[TTSDialect] {
+	return slices.Values([]TTSDialect{DialectOpenAI, DialectOpenRouter})
 }
 
 // CommandTTS synthesizes by running a local binary, such as piper or espeak-ng.
@@ -145,6 +165,15 @@ var OpenAITTSDescriptor = figureout.MustDerive(
 		// would silently configure openai. Names are kept distinct instead.
 		figureout.Value(s, &c.Format, "format").
 			Doc("Audio format to request.").NonEmpty().ApplyDefault("mp3")
+		figureout.Value(s, &c.Instructions, "instructions").
+			Doc(`How to deliver the line, for example "Speak urgently and clearly". ` +
+				"Ignored by older models such as tts-1.")
+		figureout.Optional(s, &c.Speed, "speed").
+			Doc("Playback multiplier. Unset leaves it to the provider.").
+			InRange(0.25, 4)
+		figureout.Enum(s, &c.Dialect, "dialect").
+			Doc("Where instructions go on the wire: top level for openai, nested for openrouter.").
+			ApplyDefault(DialectOpenAI)
 	},
 )
 

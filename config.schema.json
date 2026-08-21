@@ -144,6 +144,18 @@
                     "null"
                   ]
                 },
+                "dialect": {
+                  "default": "openai",
+                  "description": "Where instructions go on the wire: top level for openai, nested for openrouter.",
+                  "enum": [
+                    "openai",
+                    "openrouter"
+                  ],
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "format": {
                   "default": "mp3",
                   "description": "Audio format to request.",
@@ -153,10 +165,26 @@
                     "null"
                   ]
                 },
+                "instructions": {
+                  "description": "How to deliver the line, for example \"Speak urgently and clearly\". Ignored by older models such as tts-1.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "model": {
                   "description": "Speech model, for example openai/gpt-4o-mini-tts.",
                   "minLength": 1,
                   "type": "string"
+                },
+                "speed": {
+                  "description": "Playback multiplier. Unset leaves it to the provider.",
+                  "maximum": 4,
+                  "minimum": 0.25,
+                  "type": [
+                    "number",
+                    "null"
+                  ]
                 },
                 "type": {
                   "const": "openai",

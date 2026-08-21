@@ -72,6 +72,8 @@ tts:
     base_url: https://openrouter.ai/api/v1
     model: openai/gpt-4o-mini-tts
     voice: alloy
+    dialect: openrouter               # where instructions go on the wire
+    instructions: Speak urgently and clearly.
   repeat: 3
 ```
 
