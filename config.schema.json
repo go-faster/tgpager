@@ -79,10 +79,40 @@
       "additionalProperties": false,
       "properties": {
         "app_hash": {
-          "description": "Telegram application hash.",
-          "minLength": 1,
-          "type": "string",
-          "writeOnly": true
+          "description": "Telegram application hash. Required.",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "env": {
+                  "description": "Name of the environment variable holding the value.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "file": {
+                  "description": "Path to a file holding the value, relative to the config file.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "value": {
+                  "description": "Literal value. Prefer env or file outside development.",
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "writeOnly": true
+                }
+              },
+              "type": "object"
+            }
+          ]
         },
         "app_id": {
           "description": "Telegram application ID.",
@@ -101,8 +131,7 @@
         }
       },
       "required": [
-        "app_id",
-        "app_hash"
+        "app_id"
       ],
       "type": "object"
     },
@@ -153,11 +182,39 @@
               "properties": {
                 "api_key": {
                   "description": "Bearer token for the speech endpoint.",
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "writeOnly": true
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "env": {
+                          "description": "Name of the environment variable holding the value.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "file": {
+                          "description": "Path to a file holding the value, relative to the config file.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "value": {
+                          "description": "Literal value. Prefer env or file outside development.",
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "writeOnly": true
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
                 },
                 "base_url": {
                   "default": "https://api.openai.com/v1",
@@ -373,11 +430,39 @@
         },
         "token": {
           "description": "Bearer token required from Alertmanager. Unset means unauthenticated.",
-          "type": [
-            "string",
-            "null"
-          ],
-          "writeOnly": true
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "env": {
+                  "description": "Name of the environment variable holding the value.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "file": {
+                  "description": "Path to a file holding the value, relative to the config file.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "value": {
+                  "description": "Literal value. Prefer env or file outside development.",
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "writeOnly": true
+                }
+              },
+              "type": "object"
+            }
+          ]
         }
       },
       "type": "object"

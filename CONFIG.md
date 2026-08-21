@@ -19,14 +19,34 @@
 | Name | Type | Required | Default | Constraints | yaml | env | Description |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `app_id` | integer | yes |  | at least 1, at most 2147483647 | `telegram.app_id` | `TGPAGER_TELEGRAM_APP_ID` | Telegram application ID. |
+| [`app_hash`](#telegramapp_hash) | string or object | yes |  |  | `telegram.app_hash` | `TGPAGER_TELEGRAM_APP_HASH` | Telegram application hash. Required. |
 | `session` | string | no | `"session.json"` | non-empty | `telegram.session` | `TGPAGER_TELEGRAM_SESSION` | Path to the session file. Holds credentials; keep it private. |
+
+## telegram.app_hash
+
+Telegram application hash. Required.
+
+| Name | Type | Required | yaml | env | Description |
+| --- | --- | --- | --- | --- | --- |
+| `env` | string | no | `tts.provider.api_key.env` | `TGPAGER_TTS_PROVIDER_API_KEY_ENV` | Name of the environment variable holding the value. |
+| `file` | string | no | `tts.provider.api_key.file` | `TGPAGER_TTS_PROVIDER_API_KEY_FILE` | Path to a file holding the value, relative to the config file. |
 
 ## webhook
 
 | Name | Type | Required | Default | Constraints | yaml | env | Description |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `addr` | string | no | `":8080"` | non-empty | `webhook.addr` | `TGPAGER_WEBHOOK_ADDR` | HTTP listen address. |
+| [`token`](#webhooktoken) | string or object | yes |  |  | `webhook.token` | `TGPAGER_WEBHOOK_TOKEN` | Bearer token required from Alertmanager. Unset means unauthenticated. |
 | `queue_size` | integer | no | `100` | at least 1, at most 10000 | `webhook.queue_size` | `TGPAGER_WEBHOOK_QUEUE_SIZE` | How many pages may wait to be placed. |
+
+## webhook.token
+
+Bearer token required from Alertmanager. Unset means unauthenticated.
+
+| Name | Type | Required | yaml | env | Description |
+| --- | --- | --- | --- | --- | --- |
+| `env` | string | no | `tts.provider.api_key.env` | `TGPAGER_TTS_PROVIDER_API_KEY_ENV` | Name of the environment variable holding the value. |
+| `file` | string | no | `tts.provider.api_key.file` | `TGPAGER_TTS_PROVIDER_API_KEY_FILE` | Path to a file holding the value, relative to the config file. |
 
 ## call
 
@@ -57,12 +77,22 @@ Selected by `type: openai`.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `type` | string | yes |  | `openai` |  | `tts.provider.type` | `TGPAGER_TTS_PROVIDER_TYPE` | Selects this variant. |
 | `base_url` | string | no | `"https://api.openai.com/v1"` |  | non-empty | `tts.provider.base_url` | `TGPAGER_TTS_PROVIDER_BASE_URL` | Base URL of the speech endpoint, without a trailing /audio/speech. |
+| [`api_key`](#ttsproviderapi_key) | string or object | yes |  |  |  | `tts.provider.api_key` | `TGPAGER_TTS_PROVIDER_API_KEY` | Bearer token for the speech endpoint. |
 | `model` | string | yes |  |  | non-empty | `tts.provider.model` | `TGPAGER_TTS_PROVIDER_MODEL` | Speech model, for example openai/gpt-4o-mini-tts. |
 | `voice` | string | no | `"alloy"` |  |  | `tts.provider.voice` | `TGPAGER_TTS_PROVIDER_VOICE` | Voice name, as understood by the model. |
 | `format` | string | no | `"mp3"` |  | non-empty | `tts.provider.format` | `TGPAGER_TTS_PROVIDER_FORMAT` | Audio format to request. |
 | `instructions` | string | no |  |  |  | `tts.provider.instructions` | `TGPAGER_TTS_PROVIDER_INSTRUCTIONS` | How to deliver the line, for example "Speak urgently and clearly". Ignored by older models such as tts-1. |
 | `speed` | number | no |  |  | at least 0.25, at most 4 | `tts.provider.speed` | `TGPAGER_TTS_PROVIDER_SPEED` | Playback multiplier. Unset leaves it to the provider. |
 | `dialect` | string | no | `"openai"` | `"openai"`, `"openrouter"` |  | `tts.provider.dialect` | `TGPAGER_TTS_PROVIDER_DIALECT` | Where instructions go on the wire: top level for openai, nested for openrouter. |
+
+## tts.provider.api_key
+
+Bearer token for the speech endpoint.
+
+| Name | Type | Required | yaml | env | Description |
+| --- | --- | --- | --- | --- | --- |
+| `env` | string | no | `tts.provider.api_key.env` | `TGPAGER_TTS_PROVIDER_API_KEY_ENV` | Name of the environment variable holding the value. |
+| `file` | string | no | `tts.provider.api_key.file` | `TGPAGER_TTS_PROVIDER_API_KEY_FILE` | Path to a file holding the value, relative to the config file. |
 
 ## tts.provider (type: command)
 
