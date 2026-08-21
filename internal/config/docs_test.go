@@ -39,6 +39,10 @@ func TestJSONSchemaIsCurrent(t *testing.T) {
 // TestJSONSchemaKeepsSecrets guards a subtlety: figureout.Secret implies
 // Hidden, which removes a field from the Markdown reference. The schema must
 // still carry it, or an editor would flag a valid app_hash as unknown.
+//
+// A credential is a oneOf now — a scalar, or {value|env|file} — so the marking
+// lives on the object branch's value. The scalar branch carries no writeOnly,
+// which is a figureout gap rather than a decision here.
 func TestJSONSchemaKeepsSecrets(t *testing.T) {
 	raw, err := JSONSchema()
 	require.NoError(t, err)
@@ -46,17 +50,33 @@ func TestJSONSchemaKeepsSecrets(t *testing.T) {
 	var schema struct {
 		Properties map[string]struct {
 			Properties map[string]struct {
-				WriteOnly bool `json:"writeOnly"`
+				OneOf []struct {
+					Type       any `json:"type"`
+					Properties map[string]struct {
+						WriteOnly bool `json:"writeOnly"`
+					} `json:"properties"`
+				} `json:"oneOf"`
 			} `json:"properties"`
 		} `json:"properties"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &schema))
 
-	appHash, ok := schema.Properties["telegram"].Properties["app_hash"]
-	require.True(t, ok, "app_hash must stay in the schema")
-	require.True(t, appHash.WriteOnly, "app_hash must be marked writeOnly")
+	for _, tt := range []struct{ section, field string }{
+		{"telegram", "app_hash"},
+		{"webhook", "token"},
+	} {
+		t.Run(tt.section+"."+tt.field, func(t *testing.T) {
+			got, ok := schema.Properties[tt.section].Properties[tt.field]
+			require.True(t, ok, "must stay in the schema")
+			require.Len(t, got.OneOf, 2, "a scalar and an object spelling")
 
-	token, ok := schema.Properties["webhook"].Properties["token"]
-	require.True(t, ok, "token must stay in the schema")
-	require.True(t, token.WriteOnly, "token must be marked writeOnly")
+			var marked bool
+			for _, branch := range got.OneOf {
+				if v, ok := branch.Properties["value"]; ok && v.WriteOnly {
+					marked = true
+				}
+			}
+			require.True(t, marked, "the literal value must be marked writeOnly")
+		})
+	}
 }

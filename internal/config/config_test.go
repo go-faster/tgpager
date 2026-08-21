@@ -34,8 +34,7 @@ audio: tone.ogg
 	require.Equal(t, 3, cfg.Call.Attempts)
 	require.Equal(t, "peers.bolt", cfg.PeerCache)
 
-	_, ok := cfg.Webhook.Token.Value()
-	require.False(t, ok, "token must default to unset")
+	require.Empty(t, cfg.Webhook.Token.Value, "token must default to unset")
 }
 
 func TestLoadEnvOverridesFile(t *testing.T) {
@@ -57,9 +56,7 @@ call:
 	require.Equal(t, "@from-env", cfg.Peer, "env must win over file")
 	require.Equal(t, 7, cfg.Call.Attempts)
 
-	token, ok := cfg.Webhook.Token.Value()
-	require.True(t, ok)
-	require.Equal(t, "s3cret", token)
+	require.Equal(t, "s3cret", cfg.Webhook.Token.Value)
 }
 
 func TestLoadValidates(t *testing.T) {
@@ -248,11 +245,16 @@ func TestVoiceModeRejectsUnknown(t *testing.T) {
 // TestExampleConfigLoads keeps the shipped example from drifting away from the
 // descriptor, which is the failure a reader hits first.
 func TestExampleConfigLoads(t *testing.T) {
+	// The example reads its credentials from the environment, which is the
+	// point of it: nothing secret is written in the file.
+	t.Setenv("TGPAGER_TELEGRAM_APP_HASH", "0123456789abcdef")
+
 	cfg, _, err := Load(filepath.Join("..", "..", "tgpager.example.yml"))
 	require.NoError(t, err)
 
 	require.Equal(t, "@oncall", cfg.Peer)
 	require.Equal(t, VoiceFallback, cfg.Voice.Mode)
+	require.Equal(t, "0123456789abcdef", cfg.Telegram.AppHash.Value)
 
 	tts, ok := cfg.TTS.Value()
 	require.True(t, ok, "example must exercise the tts section")

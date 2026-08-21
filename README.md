@@ -37,14 +37,26 @@ gives editors completion and validation:
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/go-faster/tgpager/main/config.schema.json
 ```
- Credentials are omitted from that
-generated reference so their values can never be formatted into an error; they
-are:
 
-| Setting | Environment |
-| --- | --- |
-| `telegram.app_hash` | `TGPAGER_TELEGRAM_APP_HASH` |
-| `webhook.token` | `TGPAGER_WEBHOOK_TOKEN` |
+### Credentials
+
+`telegram.app_hash`, `webhook.token` and `tts.provider.api_key` each accept
+three spellings:
+
+```yaml
+app_hash: "0123456789abcdef"                   # literal
+app_hash: {env: TGPAGER_TELEGRAM_APP_HASH}     # environment variable
+app_hash: {file: /run/secrets/telegram_hash}   # file, relative to the config
+```
+
+The file spelling is the one an environment override cannot cover: Kubernetes,
+Docker and systemd's `LoadCredential` all hand a process a path rather than a
+variable. A trailing newline is stripped, so a secret written with `echo` reads
+back as written. Setting more than one spelling is an error rather than a
+silent precedence rule.
+
+`TGPAGER_TELEGRAM_APP_HASH` and friends still work as plain environment
+overrides.
 
 Point an Alertmanager receiver at it:
 

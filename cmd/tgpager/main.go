@@ -96,7 +96,7 @@ func run(ctx context.Context, lg *zap.Logger, t *app.Telemetry, cfg config.Confi
 		}
 	}()
 
-	callClient := tgcall.New(cfg.Telegram.AppID, cfg.Telegram.AppHash, cfg.Telegram.Session,
+	callClient := tgcall.New(cfg.Telegram.AppID, cfg.Telegram.AppHash.Value, cfg.Telegram.Session,
 		tgcall.WithLogger(lg),
 		tgcall.WithTracerProvider(t.TracerProvider()),
 		tgcall.WithMeterProvider(t.MeterProvider()),
@@ -108,7 +108,7 @@ func run(ctx context.Context, lg *zap.Logger, t *app.Telemetry, cfg config.Confi
 		tgcall.WithVoiceRetry(cfg.Voice.Attempts, cfg.Voice.RetryDelay),
 	)
 
-	token, _ := cfg.Webhook.Token.Value()
+	token := cfg.Webhook.Token.Value
 	srv := server.New(cfg.Webhook.QueueSize,
 		server.WithLogger(lg),
 		server.WithToken(token),
@@ -226,7 +226,7 @@ func runVoice(cfg config.Config) error {
 		return errors.Wrap(err, "build speaker")
 	}
 
-	client := tgcall.New(cfg.Telegram.AppID, cfg.Telegram.AppHash, cfg.Telegram.Session,
+	client := tgcall.New(cfg.Telegram.AppID, cfg.Telegram.AppHash.Value, cfg.Telegram.Session,
 		tgcall.WithLogger(lg),
 		tgcall.WithPeer(cfg.Peer),
 		tgcall.WithVoiceRetry(cfg.Voice.Attempts, cfg.Voice.RetryDelay),
@@ -243,7 +243,7 @@ func runLogin(tg config.Telegram) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	client := tgcall.New(tg.AppID, tg.AppHash, tg.Session)
+	client := tgcall.New(tg.AppID, tg.AppHash.Value, tg.Session)
 	if err := client.AuthFlow(ctx); err != nil {
 		return errors.Wrap(err, "authenticate")
 	}

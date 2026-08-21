@@ -2,11 +2,18 @@
 
 # Every setting may also be given as an environment variable, which wins.
 # See CONFIG.md for the full reference. Commented-out values are the defaults.
+#
+# Credentials additionally accept {env: NAME} and {file: PATH}, so a secret
+# never has to be written here. A mounted secret is a path, not a variable.
 
 telegram:
   app_id: 123456
-  # Secret: prefer TGPAGER_TELEGRAM_APP_HASH over writing it here.
-  app_hash: "0123456789abcdef0123456789abcdef"
+  # Every credential accepts three spellings: a literal, the name of an
+  # environment variable, or the path to a file (relative to this config).
+  #   app_hash: "0123456789abcdef0123456789abcdef"
+  #   app_hash: {file: /run/secrets/telegram_app_hash}
+  app_hash:
+    env: TGPAGER_TELEGRAM_APP_HASH
   # session: session.json
 
 # Who gets paged. A username, phone, t.me link, or id:<user-id>[:<access-hash>].
@@ -18,8 +25,8 @@ audio: alert.ogg
 
 webhook:
   # addr: ":8080"
-  # Secret: prefer TGPAGER_WEBHOOK_TOKEN.
-  token: "change-me"
+  token:
+    env: TGPAGER_WEBHOOK_TOKEN
   # queue_size: 100
 
 # call:
@@ -33,8 +40,8 @@ tts:
   provider:
     type: openai           # OpenAI, OpenRouter, Azure, or a local compatible server
     base_url: https://api.openai.com/v1
-    # Secret: prefer TGPAGER_TTS_PROVIDER_API_KEY.
-    api_key: "sk-..."
+    api_key:
+      env: OPENAI_API_KEY
     model: gpt-4o-mini-tts
     voice: alloy
     instructions: Speak urgently and clearly.

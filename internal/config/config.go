@@ -4,6 +4,7 @@ package config
 
 import (
 	"iter"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -22,7 +23,7 @@ const EnvPrefix = "TGPAGER_"
 // https://my.telegram.org.
 type Telegram struct {
 	AppID   int
-	AppHash string
+	AppHash Secret
 	Session string
 }
 
@@ -37,7 +38,7 @@ type Call struct {
 // Webhook is the Alertmanager listener.
 type Webhook struct {
 	Addr      string
-	Token     figureout.OptionalOf[string]
+	Token     Secret
 	QueueSize int
 }
 
@@ -45,7 +46,7 @@ type Webhook struct {
 // the vendor: OpenAI, OpenRouter, Azure or a local compatible server.
 type OpenAITTS struct {
 	BaseURL      string
-	APIKey       string
+	APIKey       Secret
 	Model        string
 	Voice        string
 	Format       string
@@ -164,8 +165,8 @@ var TelegramDescriptor = figureout.MustDerive(
 	func(c *Telegram, s *figureout.Schema[Telegram]) {
 		figureout.Explicit(s, &c.AppID, "app_id").
 			Doc("Telegram application ID.").InRange(1, 1<<31-1)
-		figureout.Explicit(s, &c.AppHash, "app_hash", figureout.Secret()).
-			Doc("Telegram application hash.").NonEmpty()
+		secret(s, &c.AppHash, "app_hash").
+			Doc("Telegram application hash. Required.")
 		figureout.Value(s, &c.Session, "session").
 			Doc("Path to the session file. Holds credentials; keep it private.").
 			NonEmpty().ApplyDefault("session.json")
@@ -195,7 +196,7 @@ var WebhookDescriptor = figureout.MustDerive(
 	func(c *Webhook, s *figureout.Schema[Webhook]) {
 		figureout.Value(s, &c.Addr, "addr").
 			Doc("HTTP listen address.").NonEmpty().ApplyDefault(":8080")
-		figureout.Optional(s, &c.Token, "token", figureout.Secret()).
+		secret(s, &c.Token, "token").
 			Doc("Bearer token required from Alertmanager. Unset means unauthenticated.")
 		figureout.Value(s, &c.QueueSize, "queue_size").
 			Doc("How many pages may wait to be placed.").
@@ -209,7 +210,7 @@ var OpenAITTSDescriptor = figureout.MustDerive(
 		figureout.Value(s, &c.BaseURL, "base_url").
 			Doc("Base URL of the speech endpoint, without a trailing /audio/speech.").
 			NonEmpty().ApplyDefault("https://api.openai.com/v1")
-		figureout.Value(s, &c.APIKey, "api_key", figureout.Secret()).
+		secret(s, &c.APIKey, "api_key").
 			Doc("Bearer token for the speech endpoint.")
 		figureout.Explicit(s, &c.Model, "model").
 			Doc("Speech model, for example openai/gpt-4o-mini-tts.").NonEmpty()
@@ -328,12 +329,48 @@ var Descriptor = figureout.MustDerive(
 )
 
 // Load resolves configuration from an optional YAML file, then the
-// environment, which wins.
+// environment, which wins, and finally materializes every credential.
 func Load(path string) (Config, *figureout.Report, error) {
-	return Descriptor.Resolve(
+	cfg, report, err := Descriptor.Resolve(
 		yaml.File(path, yaml.Optional()),
 		env.Current(env.Prefix(EnvPrefix)),
 	)
+	if err != nil {
+		return cfg, report, err
+	}
+	if err := resolveSecrets(&cfg, filepath.Dir(path)); err != nil {
+		return cfg, report, err
+	}
+	return cfg, report, nil
+}
+
+// resolveSecrets materializes every credential and enforces the required ones.
+//
+// The requirement cannot live on the descriptor: a secret is an object there,
+// and whether it holds anything is only known once a file has been read.
+func resolveSecrets(cfg *Config, baseDir string) error {
+	type named struct {
+		path   string
+		secret *Secret
+	}
+	all := []named{
+		{"telegram.app_hash", &cfg.Telegram.AppHash},
+		{"webhook.token", &cfg.Webhook.Token},
+	}
+	// OpenAI is a pointer, so the copy from Value shares the credential.
+	if ttsCfg, ok := cfg.TTS.Value(); ok && ttsCfg.Provider.OpenAI != nil {
+		all = append(all, named{"tts.provider.api_key", &ttsCfg.Provider.OpenAI.APIKey})
+	}
+
+	for _, n := range all {
+		if err := n.secret.resolve(baseDir); err != nil {
+			return errors.Wrapf(err, "%s", n.path)
+		}
+	}
+	if cfg.Telegram.AppHash.Value == "" {
+		return errors.New("telegram.app_hash is required")
+	}
+	return nil
 }
 
 // Reference renders the Markdown configuration reference from [Descriptor].

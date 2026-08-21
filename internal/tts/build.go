@@ -65,7 +65,7 @@ func newSynthesizer(cfg config.TTS, tp trace.TracerProvider) (Synthesizer, error
 		speed, _ := p.OpenAI.Speed.Value()
 		return NewOpenAI(OpenAIOptions{
 			BaseURL:        p.OpenAI.BaseURL,
-			APIKey:         p.OpenAI.APIKey,
+			APIKey:         p.OpenAI.APIKey.Value,
 			Model:          p.OpenAI.Model,
 			Voice:          p.OpenAI.Voice,
 			Format:         p.OpenAI.Format,
