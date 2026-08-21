@@ -8,6 +8,7 @@ import (
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/telegram/calls"
+	"github.com/gotd/td/telegram/message"
 	"github.com/gotd/td/telegram/peers"
 	"github.com/gotd/td/tg"
 	"go.opentelemetry.io/otel/metric"
@@ -31,6 +32,7 @@ type Client struct {
 	session string
 	client  *telegram.Client
 	calls   *calls.Client
+	sender  *message.Sender
 	api     *tg.Client
 	peers   *peers.Manager
 
@@ -133,6 +135,7 @@ func (c *Client) init() error {
 		Logger: zapToGotdLog(c.lg.Named("calls")),
 	})
 	c.calls.Register(dispatcher)
+	c.sender = message.NewSender(c.api)
 	c.peers = peers.Options{
 		Storage: c.peerStorage,
 		Logger:  zapToGotdLog(c.lg.Named("peers")),

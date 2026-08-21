@@ -12,6 +12,7 @@ const InstrumentationName = "github.com/go-faster/tgpager/internal/tgcall"
 type metrics struct {
 	attempts metric.Int64Counter
 	duration metric.Float64Histogram
+	voice    metric.Int64Counter
 }
 
 func newMetrics(mp metric.MeterProvider) (*metrics, error) {
@@ -30,7 +31,13 @@ func newMetrics(mp metric.MeterProvider) (*metrics, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &metrics{attempts: attempts, duration: duration}, nil
+	voice, err := meter.Int64Counter("tgpager.voice.messages",
+		metric.WithDescription("Voice messages sent by outcome"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &metrics{attempts: attempts, duration: duration, voice: voice}, nil
 }
 
 func outcome(err error) attribute.KeyValue {

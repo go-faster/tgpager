@@ -167,7 +167,7 @@ func run(ctx context.Context, lg *zap.Logger, t *app.Telemetry, cfg config.Confi
 				case <-ctx.Done():
 					return nil
 				case req := <-srv.Queue():
-					processCall(ctx, lg, callClient, streamer, speaker, req)
+					processPage(ctx, lg, callClient, streamer, speaker, cfg.Voice, req)
 					srv.Done(req.GroupKey)
 				}
 			}
@@ -212,23 +212,93 @@ func runLogin(tg config.Telegram) error {
 	return nil
 }
 
-func processCall(ctx context.Context, lg *zap.Logger, client *tgcall.Client, streamer audio.Streamer, speaker *tts.Speaker, req server.CallRequest) {
+func processPage(
+	ctx context.Context,
+	lg *zap.Logger,
+	client *tgcall.Client,
+	streamer *audio.FFmpegStreamer,
+	speaker *tts.Speaker,
+	voice config.Voice,
+	req server.CallRequest,
+) {
 	lg = lg.With(zap.String("groupKey", req.GroupKey))
 
 	// Synthesized before the call is placed: doing it after connect would play
 	// the callee an HTTP round trip of silence.
 	spec := speaker.Speak(ctx, req.Payload)
 
-	err := client.Ring(ctx, func(ctx context.Context, call *tgcall.Call) error {
+	var callErr error
+	if voice.Mode.Calls() {
+		callErr = placeCall(ctx, lg, client, streamer, spec)
+		if callErr != nil {
+			lg.Error("Failed to page", zap.Error(callErr))
+		} else {
+			lg.Info("Paged successfully")
+		}
+	}
+
+	if !voice.Mode.Sends(callErr != nil) {
+		return
+	}
+	if err := sendVoice(ctx, lg, client, streamer, spec, voice); err != nil {
+		// Only in "only" mode is this the page itself failing; everywhere else
+		// a call has already been placed and this is the record of it.
+		if voice.Mode == config.VoiceOnly {
+			lg.Error("Failed to page", zap.Error(err))
+			return
+		}
+		lg.Warn("Failed to leave a voice message", zap.Error(err))
+		return
+	}
+	lg.Info("Left a voice message")
+}
+
+func placeCall(ctx context.Context, lg *zap.Logger, client *tgcall.Client, streamer *audio.FFmpegStreamer, spec audio.Spec) error {
+	return client.Ring(ctx, func(ctx context.Context, call *tgcall.Call) error {
 		lg.Info("Streaming audio",
 			zap.Strings("segments", spec.Segments),
 			zap.Int("repeat", spec.Repeat),
 		)
 		return streamer.Stream(ctx, call.WriteRTP, spec, audio.WithLogger(lg))
 	})
+}
+
+func sendVoice(ctx context.Context, lg *zap.Logger, client *tgcall.Client, renderer audio.Renderer, spec audio.Spec, voice config.Voice) error {
+	ctx, cancel := context.WithTimeout(ctx, voice.Timeout)
+	defer cancel()
+
+	f, err := os.CreateTemp("", "tgpager-*.ogg")
 	if err != nil {
-		lg.Error("Failed to page", zap.Error(err))
-		return
+		return errors.Wrap(err, "create temp file")
 	}
-	lg.Info("Paged successfully")
+	path := f.Name()
+	// ffmpeg writes the file itself; the handle only reserved the name.
+	if err := f.Close(); err != nil {
+		return errors.Wrap(err, "close temp file")
+	}
+	defer func() {
+		if err := os.Remove(path); err != nil {
+			lg.Warn("Failed to remove rendered voice message", zap.Error(err))
+		}
+	}()
+
+	if err := renderer.Render(ctx, voiceSpec(spec), path, audio.WithLogger(lg)); err != nil {
+		return errors.Wrap(err, "render")
+	}
+	dur, err := audio.OggDuration(path)
+	if err != nil {
+		return errors.Wrap(err, "read duration")
+	}
+	return client.SendVoice(ctx, path, dur)
+}
+
+// voiceSpec is the speech alone, once.
+//
+// The call plays tone, speech, tone, speech: the tone wakes someone and the
+// repeat catches a callee answering mid-sentence. Neither applies to a chat
+// message, where the notification is the attention-getter and replay is a tap.
+// Speech is the last segment, and is the tone itself when synthesis was
+// unavailable, which is still worth recording.
+func voiceSpec(spec audio.Spec) audio.Spec {
+	return audio.File(spec.Segments[len(spec.Segments)-1])
 }

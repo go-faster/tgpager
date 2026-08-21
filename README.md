@@ -98,6 +98,32 @@ a pager that will not boot is worse than one that only plays a tone. To fail a
 deploy instead, run `tgpager -check`, which exits non-zero if the speech path
 is broken.
 
+## Voice messages
+
+A call is ephemeral: missed, it records nothing. tgpager can also leave the
+page in the chat as a Telegram voice message, which survives being missed and
+can be forwarded to whoever owns the service.
+
+```yaml
+voice:
+  mode: fallback    # off | fallback | always | only
+```
+
+| Mode | Behaviour |
+| --- | --- |
+| `off` | never send one (default) |
+| `fallback` | send only after every call attempt failed |
+| `always` | send on every page, answered or not |
+| `only` | send instead of calling, for alerts that must not ring anybody |
+
+It carries the speech alone, once. The tone and the repeat exist to wake
+someone and to catch a callee answering mid-sentence, neither of which applies
+to a chat message. When speech is unavailable it carries the tone, because
+"something fired" still beats nothing.
+
+Sending never delays or consumes a call attempt, and outside `only` mode a
+failure to send is a warning: the call already happened.
+
 ## Peer
 
 `-peer` accepts a username, phone, deeplink or raw ID:

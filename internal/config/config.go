@@ -100,12 +100,58 @@ type TTSCache struct {
 	MaxBytes int64
 }
 
+// VoiceMode decides whether a page is also, or instead, left in the chat as a
+// voice message.
+type VoiceMode string
+
+// Voice modes.
+const (
+	// VoiceOff never sends one.
+	VoiceOff VoiceMode = "off"
+	// VoiceFallback sends one only when every call attempt failed, so a page
+	// nobody picked up is still recoverable from the chat.
+	VoiceFallback VoiceMode = "fallback"
+	// VoiceAlways sends one on every page, answered or not.
+	VoiceAlways VoiceMode = "always"
+	// VoiceOnly sends one instead of calling.
+	VoiceOnly VoiceMode = "only"
+)
+
+// AllValues implements [figureout.EnumValuer].
+func (VoiceMode) AllValues() iter.Seq[VoiceMode] {
+	return slices.Values([]VoiceMode{VoiceOff, VoiceFallback, VoiceAlways, VoiceOnly})
+}
+
+// Calls reports whether a page places a call.
+func (m VoiceMode) Calls() bool { return m != VoiceOnly }
+
+// Sends reports whether a page leaves a voice message, given how the call went.
+func (m VoiceMode) Sends(callFailed bool) bool {
+	switch m {
+	case VoiceAlways, VoiceOnly:
+		return true
+	case VoiceFallback:
+		return callFailed
+	default:
+		return false
+	}
+}
+
+// Voice leaves the page in the chat as a voice message. A call is ephemeral:
+// missed, it records nothing.
+type Voice struct {
+	Mode     VoiceMode
+	Timeout  time.Duration
+	Attempts int
+}
+
 // Config is the tgpager configuration.
 type Config struct {
 	Telegram  Telegram
 	Webhook   Webhook
 	Call      Call
 	TTS       figureout.OptionalOf[TTS]
+	Voice     Voice
 	Peer      string
 	Audio     string
 	PeerCache string
@@ -235,6 +281,23 @@ var TTSDescriptor = figureout.MustDerive(
 	},
 )
 
+// VoiceDescriptor describes [Voice].
+var VoiceDescriptor = figureout.MustDerive(
+	func(c *Voice, s *figureout.Schema[Voice]) {
+		figureout.Enum(s, &c.Mode, "mode").
+			Doc("When to leave the page in the chat as a voice message: " +
+				"never, only after every call attempt failed, on every page, " +
+				"or instead of calling.").
+			ApplyDefault(VoiceOff)
+		figureout.Value(s, &c.Timeout, "timeout").
+			Doc("How long to spend rendering and uploading before giving up.").
+			AtLeast(time.Second).ApplyDefault(60 * time.Second)
+		figureout.Value(s, &c.Attempts, "attempts").
+			Doc("How many times to try sending.").
+			InRange(1, 100).ApplyDefault(3)
+	},
+)
+
 // Descriptor describes [Config].
 var Descriptor = figureout.MustDerive(
 	func(c *Config, s *figureout.Schema[Config]) {
@@ -242,6 +305,9 @@ var Descriptor = figureout.MustDerive(
 		figureout.Object(s, &c.Webhook, "webhook", WebhookDescriptor)
 		figureout.Object(s, &c.Call, "call", CallDescriptor)
 		figureout.OptionalObject(s, &c.TTS, "tts", TTSDescriptor)
+		// A plain object, not an optional one: "off" already says disabled, so
+		// the section's presence has nothing left to mean.
+		figureout.Object(s, &c.Voice, "voice", VoiceDescriptor)
 
 		figureout.Explicit(s, &c.Peer, "peer").
 			Doc("Call target: @username, phone, t.me link, or id:<user-id>[:<access-hash>].").

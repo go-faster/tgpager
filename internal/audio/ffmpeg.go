@@ -27,6 +27,14 @@ type streamOptions struct {
 
 type StreamOption func(*streamOptions)
 
+func newStreamOptions(opts []StreamOption) *streamOptions {
+	o := &streamOptions{logger: zap.NewNop()}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
+}
+
 func WithLogger(lg *zap.Logger) StreamOption {
 	return func(o *streamOptions) {
 		o.logger = lg
@@ -38,13 +46,7 @@ func (f *FFmpegStreamer) Stream(ctx context.Context, write func(*rtp.Packet) err
 		return err
 	}
 
-	o := &streamOptions{
-		logger: zap.NewNop(),
-	}
-	for _, opt := range opts {
-		opt(o)
-	}
-	lg := o.logger
+	lg := newStreamOptions(opts).logger
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{
 		IP: net.ParseIP("127.0.0.1"),
 	})
@@ -57,13 +59,8 @@ func (f *FFmpegStreamer) Stream(ctx context.Context, write func(*rtp.Packet) err
 	// #nosec G404 -- an RTP SSRC is a stream identifier, not a secret.
 	ssrc := rand.Uint32()
 
-	args := []string{"-re"}
-	for _, seg := range spec.Segments {
-		args = append(args, "-i", seg)
-	}
+	args := append([]string{"-re"}, composeArgs(spec)...)
 	args = append(args,
-		"-filter_complex", concatFilter(len(spec.Segments), spec.Repeat),
-		"-map", "[out]",
 		"-vn",
 		"-c:a", "libopus",
 		"-ar", fmt.Sprintf("%d", sampleRate),
@@ -115,7 +112,7 @@ func (f *FFmpegStreamer) Stream(ctx context.Context, write func(*rtp.Packet) err
 					_ = cmd.Process.Kill()
 					return ctx.Err()
 				case waitErr := <-waitCh:
-					return finishFFmpeg(waitErr, stderrCh, lg)
+					return finishFFmpeg(waitErr, <-stderrCh, lg)
 				default:
 					continue
 				}
@@ -143,6 +140,19 @@ func (f *FFmpegStreamer) Stream(ctx context.Context, write func(*rtp.Packet) err
 	}
 }
 
+// composeArgs declares the inputs and the filter that joins them, shared by
+// streaming into a call and rendering to a file so both play the same thing.
+func composeArgs(spec Spec) []string {
+	args := make([]string, 0, len(spec.Segments)*2+4)
+	for _, seg := range spec.Segments {
+		args = append(args, "-i", seg)
+	}
+	return append(args,
+		"-filter_complex", concatFilter(len(spec.Segments), spec.Repeat),
+		"-map", "[out]",
+	)
+}
+
 // concatFilter joins every input end to end, repeating the whole sequence.
 // The concat filter rather than the demuxer: a synthesized MP3 and a local Ogg
 // tone differ in codec and sample rate, which the demuxer refuses.
@@ -158,8 +168,7 @@ func concatFilter(inputs, repeat int) string {
 	return fmt.Sprintf("%sconcat=n=%d:v=0:a=1[out]", refs.String(), n)
 }
 
-func finishFFmpeg(waitErr error, stderrCh <-chan []byte, lg *zap.Logger) error {
-	stderr := <-stderrCh
+func finishFFmpeg(waitErr error, stderr []byte, lg *zap.Logger) error {
 	if len(stderr) > 0 {
 		lg.Debug("ffmpeg stderr", zap.ByteString("output", stderr))
 	}

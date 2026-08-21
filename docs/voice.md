@@ -1,6 +1,10 @@
 # Voice messages
 
-Status: design.
+Status: implemented.
+
+Two things surfaced during implementation and are recorded below: the
+small-file upload requirement, and an overflow in the duration arithmetic that
+the fuzzer found.
 
 A call is ephemeral. If the callee sleeps through it, or the phone was face
 down in another room, all three attempts fail and nothing is left behind: no
@@ -104,7 +108,14 @@ is the exact playable length. Scanning back from EOF for the final page is
 about thirty lines.
 
 Verified on a real render: last granule 480312, pre-skip 312, so 480000/48000 =
-10.000s, against ffprobe's 10.0065s (which includes the pre-skip).
+10.000s, against ffprobe's 10.0065s (which includes the pre-skip). The test
+suite pins the parser against ffprobe rather than against my reading of the
+specification.
+
+The granule is whatever the file claims, and scaling one straight to
+nanoseconds overflows `int64` at around 53 hours, wrapping to a negative
+duration. Found by the fuzzer within seconds of it being written, which is the
+argument for having written it.
 
 No waveform. Telegram shows a flat bar without one, and computing a real
 waveform means decoding the Opus we just encoded to get 5-bit amplitude buckets
@@ -122,7 +133,20 @@ sender.To(peer).
 ```
 
 `Voice` sets `audio/ogg` and `DocumentAttributeAudio{Voice: true}`; duration
-goes on the same attribute.
+goes on the same attribute. A voice message is an ordinary document with that
+flag on it, which is also why the flag alone is not enough.
+
+**It must upload as a small file.** gotd uploads an `InputFileBig` for anything
+over 10 MB, and for any source whose size it does not know — `FromReader`
+passes -1 and always takes the big path. Telegram delivers a big file as a
+plain attachment whatever attributes it carries, so the voice message would
+silently arrive as a file. Hence `FromPath`, which stats and therefore knows
+the size, plus an explicit check that the result really is a `*tg.InputFile`
+and a size check before uploading at all. Failing loudly beats sending the
+wrong thing: a page nobody recognises as a page is not a page.
+
+The upload promise is built once and reused across retries, so a send that
+fails after a successful upload does not re-upload the file.
 
 Two small pieces of plumbing:
 
@@ -174,8 +198,10 @@ attempt.
 
 ## Observability
 
-Span `tgcall.SendVoice` with mode, duration and byte count. Counter
-`tgpager.voice.messages{result=sent|error, mode=…}`.
+Span `tgcall.SendVoice` with duration and byte count. Counter
+`tgpager.voice.messages{outcome=success|failure}`, matching the call metrics
+rather than inventing a second vocabulary. Mode is a static property of the
+deployment, so it belongs in the log line, not on every measurement.
 
 The spoken text is not on the span, for the same reason it is not on the TTS
 spans.

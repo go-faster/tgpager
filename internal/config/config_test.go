@@ -195,3 +195,51 @@ tts:
 	require.Zero(t, tts.Cache.TTL, "zero must be expressible")
 	require.Zero(t, tts.Cache.MaxBytes)
 }
+
+func TestVoiceMode(t *testing.T) {
+	tests := []struct {
+		mode           VoiceMode
+		calls          bool
+		sendsOnSuccess bool
+		sendsOnFailure bool
+	}{
+		{VoiceOff, true, false, false},
+		{VoiceFallback, true, false, true},
+		{VoiceAlways, true, true, true},
+		{VoiceOnly, false, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.mode), func(t *testing.T) {
+			require.Equal(t, tt.calls, tt.mode.Calls())
+			require.Equal(t, tt.sendsOnSuccess, tt.mode.Sends(false))
+			require.Equal(t, tt.sendsOnFailure, tt.mode.Sends(true))
+		})
+	}
+}
+
+const minimalConfig = `
+telegram:
+  app_id: 1
+  app_hash: h
+peer: "@oncall"
+audio: tone.ogg
+`
+
+func TestVoiceDefaults(t *testing.T) {
+	cfg, _, err := Load(writeYAML(t, minimalConfig))
+	require.NoError(t, err)
+	require.Equal(t, VoiceOff, cfg.Voice.Mode, "voice must be off unless asked for")
+	require.Equal(t, 60*time.Second, cfg.Voice.Timeout)
+	require.Equal(t, 3, cfg.Voice.Attempts)
+}
+
+func TestVoiceModeFromConfig(t *testing.T) {
+	cfg, _, err := Load(writeYAML(t, minimalConfig+"voice:\n  mode: fallback\n"))
+	require.NoError(t, err)
+	require.Equal(t, VoiceFallback, cfg.Voice.Mode)
+}
+
+func TestVoiceModeRejectsUnknown(t *testing.T) {
+	_, _, err := Load(writeYAML(t, minimalConfig+"voice:\n  mode: shout\n"))
+	require.Error(t, err)
+}

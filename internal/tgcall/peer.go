@@ -176,3 +176,21 @@ func (c *Client) inputUser() (tg.InputUserClass, error) {
 	}
 	return c.peerUser, nil
 }
+
+// inputPeer addresses the resolved peer as a chat rather than as a call
+// target, for sending a message to it.
+func (c *Client) inputPeer() (tg.InputPeerClass, error) {
+	if c.peerUser == nil {
+		return nil, errors.New("peer is not resolved")
+	}
+	switch u := c.peerUser.(type) {
+	case *tg.InputUser:
+		return &tg.InputPeerUser{UserID: u.UserID, AccessHash: u.AccessHash}, nil
+	case *tg.InputUserSelf:
+		return &tg.InputPeerSelf{}, nil
+	case *tg.InputUserFromMessage:
+		return &tg.InputPeerUserFromMessage{Peer: u.Peer, MsgID: u.MsgID, UserID: u.UserID}, nil
+	default:
+		return nil, errors.Errorf("cannot address %T as a chat peer", c.peerUser)
+	}
+}
