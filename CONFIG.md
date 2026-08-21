@@ -20,11 +20,21 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `app_id` | integer | yes |  | at least 1, at most 2147483647 | `telegram.app_id` | `TGPAGER_TELEGRAM_APP_ID` | Telegram application ID. |
 | [`app_hash`](#telegramapp_hash) | string or object | yes |  |  | `telegram.app_hash` | `TGPAGER_TELEGRAM_APP_HASH` | Telegram application hash. Required. |
+| [`bot_token`](#telegrambot_token) | string or object | yes |  |  | `telegram.bot_token` | `TGPAGER_TELEGRAM_BOT_TOKEN` | Authenticate as this bot instead of interactively as a user. Bots cannot place calls, so this only suits voice.mode: only. |
 | `session` | string | no | `"session.json"` | non-empty | `telegram.session` | `TGPAGER_TELEGRAM_SESSION` | Path to the session file. Holds credentials; keep it private. |
 
 ## telegram.app_hash
 
 Telegram application hash. Required.
+
+| Name | Type | Required | yaml | env | Description |
+| --- | --- | --- | --- | --- | --- |
+| `env` | string | no | `tts.provider.api_key.env` | `TGPAGER_TTS_PROVIDER_API_KEY_ENV` | Name of the environment variable holding the value. |
+| `file` | string | no | `tts.provider.api_key.file` | `TGPAGER_TTS_PROVIDER_API_KEY_FILE` | Path to a file holding the value, relative to the config file. |
+
+## telegram.bot_token
+
+Authenticate as this bot instead of interactively as a user. Bots cannot place calls, so this only suits voice.mode: only.
 
 | Name | Type | Required | yaml | env | Description |
 | --- | --- | --- | --- | --- | --- |

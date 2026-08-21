@@ -120,6 +120,42 @@
           "minimum": 1,
           "type": "integer"
         },
+        "bot_token": {
+          "description": "Authenticate as this bot instead of interactively as a user. Bots cannot place calls, so this only suits voice.mode: only.",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "env": {
+                  "description": "Name of the environment variable holding the value.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "file": {
+                  "description": "Path to a file holding the value, relative to the config file.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "value": {
+                  "description": "Literal value. Prefer env or file outside development.",
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "writeOnly": true
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
         "session": {
           "default": "session.json",
           "description": "Path to the session file. Holds credentials; keep it private.",
