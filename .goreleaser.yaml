@@ -34,7 +34,7 @@ nfpms:
     description: |
       Alertmanager webhook that pages on-call by placing a Telegram call
       and playing an audio file into it.
-    license: AGPL-3.0
+    license: Apache 2.0
     formats: [deb, rpm]
     deb:
       lintian_overrides:

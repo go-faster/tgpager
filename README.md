@@ -73,3 +73,7 @@ across restarts. The cache is account-scoped: drop it when changing session.
 Traces and metrics are exported via OpenTelemetry, including gotd's own MTProto
 spans. See [go-faster/sdk/app](https://github.com/go-faster/sdk) for the
 `OTEL_*` environment variables.
+
+## License
+
+[Apache License 2.0](LICENSE)
