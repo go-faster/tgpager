@@ -1,10 +1,23 @@
-fail_on_severity: "low"
+# Reviewed against the full module graph: every dependency resolves to one of
+# these, so the list is exhaustive rather than aspirational. MPL-2.0 is unused
+# today and kept only because it is compatible and cheap to allow up front.
+#
+# Copyleft licenses are deliberately absent: this project ships under
+# Apache-2.0, and a GPL or AGPL dependency would be incompatible with that.
 allow_licenses:
+  - "Apache-2.0"
   - "MIT"
-  - "MIT-0"
-  - "ISC"
-  - "MPL-2.0"
+  - "MIT-0" # github.com/segmentio/asm
+  - "ISC" # github.com/coder/websocket
   - "BSD-2-Clause"
   - "BSD-3-Clause"
-  - "Apache-2.0"
+  - "MPL-2.0"
+  # golang.org/x/* ship a PATENTS file alongside their BSD-3-Clause license.
   - "LicenseRef-scancode-google-patent-license-golang"
+
+# A paging tool is part of the on-call path, so a known-vulnerable dependency
+# should block the pull request rather than be merged and triaged later.
+fail_on_severity: "low"
+
+# Without this, a run that fails prints the reason only in the job log.
+comment-summary-in-pr: on-failure
