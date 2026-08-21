@@ -40,10 +40,11 @@ type Client struct {
 	api     *tg.Client
 	peers   *peers.Manager
 
-	botToken    string
-	peer        string
-	peerUser    tg.InputUserClass
-	peerStorage peers.Storage
+	botToken     string
+	callsEnabled bool
+	peer         string
+	peerUser     tg.InputUserClass
+	peerStorage  peers.Storage
 
 	tracerProvider trace.TracerProvider
 	meterProvider  metric.MeterProvider
@@ -68,6 +69,13 @@ func WithLogger(lg *zap.Logger) Option {
 // voice message but cannot place a call, which Telegram reserves for users.
 func WithBotToken(token string) Option {
 	return func(c *Client) { c.botToken = token }
+}
+
+// WithCalls declares whether this client will place calls. Set it from the
+// configured mode: it is what lets a bot session be rejected at startup
+// instead of on the first page.
+func WithCalls(enabled bool) Option {
+	return func(c *Client) { c.callsEnabled = enabled }
 }
 
 // WithPeer sets the call target: a @username, phone number or t.me link,
@@ -115,6 +123,7 @@ func WithVoiceRetry(attempts int, delay time.Duration) Option {
 func New(appID int, appHash, session string, opts ...Option) *Client {
 	c := &Client{
 		lg:              zap.NewNop(),
+		callsEnabled:    true,
 		appID:           appID,
 		appHash:         appHash,
 		session:         session,
@@ -180,6 +189,9 @@ func (c *Client) Run(ctx context.Context, f func(ctx context.Context) error) err
 		if err := c.authenticate(ctx); err != nil {
 			return err
 		}
+		if err := c.verifySelf(ctx); err != nil {
+			return err
+		}
 		if err := c.resolvePeer(ctx); err != nil {
 			return err
 		}
@@ -220,4 +232,30 @@ func (c *Client) authenticateBot(ctx context.Context) error {
 		return errors.Wrap(err, "authenticate as bot")
 	}
 	return nil
+}
+
+// verifySelf refuses a bot session that is expected to place calls.
+//
+// The config rejects telegram.bot_token alongside a calling mode, but that
+// only sees how the config is spelled. A session file created from a bot
+// token stays a bot session with the token removed, and the failure would
+// otherwise surface on the first real page.
+func (c *Client) verifySelf(ctx context.Context) error {
+	if !c.callsEnabled {
+		return nil
+	}
+	status, err := c.client.Auth().Status(ctx)
+	if err != nil {
+		return errors.Wrap(err, "auth status")
+	}
+	return botSessionError(c.session, status.User)
+}
+
+func botSessionError(session string, user *tg.User) error {
+	if user == nil || !user.Bot {
+		return nil
+	}
+	return errors.Errorf(
+		"session %q is a bot, but calls are enabled: bots cannot place calls, set voice.mode to \"only\"",
+		session)
 }

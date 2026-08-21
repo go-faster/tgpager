@@ -102,6 +102,7 @@ func run(ctx context.Context, lg *zap.Logger, t *app.Telemetry, cfg config.Confi
 		tgcall.WithMeterProvider(t.MeterProvider()),
 		tgcall.WithPeer(cfg.Peer),
 		tgcall.WithBotToken(cfg.Telegram.BotToken.Value),
+		tgcall.WithCalls(cfg.Voice.Mode.Calls()),
 		tgcall.WithPeerStorage(peerStorage),
 		tgcall.WithRingTimeout(cfg.Call.RingTimeout),
 		tgcall.WithConnectTimeout(cfg.Call.ConnectTimeout),
@@ -231,6 +232,7 @@ func runVoice(cfg config.Config) error {
 		tgcall.WithLogger(lg),
 		tgcall.WithPeer(cfg.Peer),
 		tgcall.WithBotToken(cfg.Telegram.BotToken.Value),
+		tgcall.WithCalls(false),
 		tgcall.WithVoiceRetry(cfg.Voice.Attempts, cfg.Voice.RetryDelay),
 	)
 	return client.Run(ctx, func(ctx context.Context) error {
