@@ -328,6 +328,15 @@
             "null"
           ]
         },
+        "retry_delay": {
+          "default": "2s",
+          "description": "Delay between send attempts. A FLOOD_WAIT from Telegram wins over this when it asks for longer.",
+          "format": "duration",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "timeout": {
           "default": "1m0s",
           "description": "How long to spend rendering and uploading before giving up.",

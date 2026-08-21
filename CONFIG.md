@@ -92,3 +92,4 @@ Selected by `type: command`.
 | `mode` | string | no | `"off"` | `"off"`, `"fallback"`, `"always"`, `"only"` |  | `voice.mode` | `TGPAGER_VOICE_MODE` | When to leave the page in the chat as a voice message: never, only after every call attempt failed, on every page, or instead of calling. |
 | `timeout` | duration | no | `1m0s` |  | at least 1s | `voice.timeout` | `TGPAGER_VOICE_TIMEOUT` | How long to spend rendering and uploading before giving up. |
 | `attempts` | integer | no | `3` |  | at least 1, at most 100 | `voice.attempts` | `TGPAGER_VOICE_ATTEMPTS` | How many times to try sending. |
+| `retry_delay` | duration | no | `2s` |  | at least 0s | `voice.retry_delay` | `TGPAGER_VOICE_RETRY_DELAY` | Delay between send attempts. A FLOOD_WAIT from Telegram wins over this when it asks for longer. |
