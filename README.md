@@ -101,6 +101,20 @@ tts:
     args: ["--model", "en_US.onnx", "--output_file", "{{output}}"]
 ```
 
+[contrib/glados.sh](contrib/glados.sh) is a worked example of the `command`
+provider: espeak-ng says the words, ffmpeg supplies the panel they come out of.
+No weights, no GPU, no network — and it sounds like being told your test
+chamber is on fire.
+
+```yaml
+tts:
+  provider:
+    type: command
+    name: ./contrib/glados.sh
+    args: ["{{text}}", "{{output}}"]
+    output_format: wav
+```
+
 Synthesis happens before the call is placed, and its result is cached by
 content so a resent alert is not re-synthesized. **If it fails for any reason
 the page still happens**, playing `audio` alone.
