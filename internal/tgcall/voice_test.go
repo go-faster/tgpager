@@ -56,6 +56,7 @@ func voiceClient(t *testing.T, inv tg.Invoker) *Client {
 	c := New(1, "hash", "session.json",
 		WithLogger(zaptest.NewLogger(t)),
 		WithRetry(3, time.Millisecond),
+		WithVoiceRetry(3, time.Millisecond),
 	)
 	m, err := newMetrics(metricnoop.NewMeterProvider())
 	require.NoError(t, err)

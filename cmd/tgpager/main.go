@@ -28,10 +28,12 @@ func main() {
 		configPath string
 		login      bool
 		check      bool
+		testVoice  bool
 	)
 	flag.StringVar(&configPath, "config", "tgpager.yml", "Path to the configuration file")
 	flag.BoolVar(&login, "login", false, "Authenticate interactively, write the session file and exit")
 	flag.BoolVar(&check, "check", false, "Verify configuration and the speech provider, then exit")
+	flag.BoolVar(&testVoice, "voice", false, "Send one test voice message to the peer and exit")
 	flag.Parse()
 
 	cfg, _, err := config.Load(configPath)
@@ -53,6 +55,14 @@ func main() {
 	if _, err := os.Stat(cfg.Audio); err != nil {
 		fmt.Fprintf(os.Stderr, "audio file: %v\n", err)
 		os.Exit(1)
+	}
+
+	if testVoice {
+		if err := runVoice(cfg); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if check {
@@ -95,6 +105,7 @@ func run(ctx context.Context, lg *zap.Logger, t *app.Telemetry, cfg config.Confi
 		tgcall.WithRingTimeout(cfg.Call.RingTimeout),
 		tgcall.WithConnectTimeout(cfg.Call.ConnectTimeout),
 		tgcall.WithRetry(cfg.Call.Attempts, cfg.Call.RetryDelay),
+		tgcall.WithVoiceRetry(cfg.Voice.Attempts, cfg.Voice.RetryDelay),
 	)
 
 	token, _ := cfg.Webhook.Token.Value()
@@ -196,6 +207,34 @@ func runCheck(cfg config.Config) error {
 		return errors.Wrap(err, "build speaker")
 	}
 	return speaker.Preflight(ctx)
+}
+
+// runVoice sends a single voice message and exits, so the message path can be
+// exercised without waiting for an alert or ringing anybody. It ignores
+// voice.mode: asking for it is the request.
+func runVoice(cfg config.Config) error {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	lg, err := zap.NewDevelopment()
+	if err != nil {
+		return err
+	}
+
+	speaker, err := tts.Build(cfg, tts.BuildOptions{Logger: lg, Tone: cfg.Audio})
+	if err != nil {
+		return errors.Wrap(err, "build speaker")
+	}
+
+	client := tgcall.New(cfg.Telegram.AppID, cfg.Telegram.AppHash, cfg.Telegram.Session,
+		tgcall.WithLogger(lg),
+		tgcall.WithPeer(cfg.Peer),
+		tgcall.WithVoiceRetry(cfg.Voice.Attempts, cfg.Voice.RetryDelay),
+	)
+	return client.Run(ctx, func(ctx context.Context) error {
+		spec := speaker.Speak(ctx, tts.PreflightPayload())
+		return sendVoice(ctx, lg, client, audio.NewFFmpeg(), spec, cfg.Voice)
+	})
 }
 
 // runLogin authenticates outside app.Run, so the terminal prompts are not

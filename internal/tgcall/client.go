@@ -23,6 +23,10 @@ const (
 	defaultConnectTimeout = 30 * time.Second
 	defaultAttempts       = 3
 	defaultRetryDelay     = 10 * time.Second
+	defaultVoiceAttempts  = 3
+	// defaultVoiceRetryDelay is short because the whole send is already bounded
+	// by the caller's timeout, and nothing is ringing while it waits.
+	defaultVoiceRetryDelay = 2 * time.Second
 )
 
 type Client struct {
@@ -45,10 +49,12 @@ type Client struct {
 	tracer         trace.Tracer
 	metrics        *metrics
 
-	ringTimeout    time.Duration
-	connectTimeout time.Duration
-	attempts       int
-	retryDelay     time.Duration
+	ringTimeout     time.Duration
+	connectTimeout  time.Duration
+	attempts        int
+	retryDelay      time.Duration
+	voiceAttempts   int
+	voiceRetryDelay time.Duration
 }
 
 type Option func(*Client)
@@ -88,22 +94,38 @@ func WithRetry(attempts int, delay time.Duration) Option {
 	}
 }
 
+// WithVoiceRetry sets how many times [Client.SendVoice] tries before giving up,
+// and how long it waits between tries. Separate from the call retry: a send
+// that keeps failing costs nothing but time, while a call that keeps failing
+// rings a person.
+func WithVoiceRetry(attempts int, delay time.Duration) Option {
+	return func(c *Client) {
+		c.voiceAttempts = attempts
+		c.voiceRetryDelay = delay
+	}
+}
+
 func New(appID int, appHash, session string, opts ...Option) *Client {
 	c := &Client{
-		lg:             zap.NewNop(),
-		appID:          appID,
-		appHash:        appHash,
-		session:        session,
-		ringTimeout:    defaultRingTimeout,
-		connectTimeout: defaultConnectTimeout,
-		attempts:       defaultAttempts,
-		retryDelay:     defaultRetryDelay,
+		lg:              zap.NewNop(),
+		appID:           appID,
+		appHash:         appHash,
+		session:         session,
+		ringTimeout:     defaultRingTimeout,
+		connectTimeout:  defaultConnectTimeout,
+		attempts:        defaultAttempts,
+		retryDelay:      defaultRetryDelay,
+		voiceAttempts:   defaultVoiceAttempts,
+		voiceRetryDelay: defaultVoiceRetryDelay,
 	}
 	for _, opt := range opts {
 		opt(c)
 	}
 	if c.attempts < 1 {
 		c.attempts = 1
+	}
+	if c.voiceAttempts < 1 {
+		c.voiceAttempts = 1
 	}
 	if c.tracerProvider == nil {
 		c.tracerProvider = noop.NewTracerProvider()

@@ -124,6 +124,15 @@ to a chat message. When speech is unavailable it carries the tone, because
 Sending never delays or consumes a call attempt, and outside `only` mode a
 failure to send is a warning: the call already happened.
 
+To try it without waiting for an alert or ringing anybody:
+
+```console
+$ tgpager -voice
+```
+
+That sends one test voice message to `peer` and exits, whatever `voice.mode`
+says. Point `peer` at your own account and it lands in Saved Messages.
+
 ## Peer
 
 `-peer` accepts a username, phone, deeplink or raw ID:

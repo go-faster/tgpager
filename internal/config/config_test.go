@@ -231,6 +231,7 @@ func TestVoiceDefaults(t *testing.T) {
 	require.Equal(t, VoiceOff, cfg.Voice.Mode, "voice must be off unless asked for")
 	require.Equal(t, 60*time.Second, cfg.Voice.Timeout)
 	require.Equal(t, 3, cfg.Voice.Attempts)
+	require.Equal(t, 2*time.Second, cfg.Voice.RetryDelay)
 }
 
 func TestVoiceModeFromConfig(t *testing.T) {

@@ -59,7 +59,7 @@ func (c *Client) SendVoice(ctx context.Context, path string, dur time.Duration) 
 	// file, so a retry after a failed send does not re-upload it.
 	upload := message.FromPath(path)
 
-	return c.retry(ctx, func(ctx context.Context, lg *zap.Logger) error {
+	return c.retry(ctx, c.voiceAttempts, c.voiceRetryDelay, func(ctx context.Context, lg *zap.Logger) error {
 		lg.Info("Sending voice message",
 			zap.Int64("bytes", info.Size()),
 			zap.Duration("duration", dur),

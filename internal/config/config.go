@@ -140,9 +140,10 @@ func (m VoiceMode) Sends(callFailed bool) bool {
 // Voice leaves the page in the chat as a voice message. A call is ephemeral:
 // missed, it records nothing.
 type Voice struct {
-	Mode     VoiceMode
-	Timeout  time.Duration
-	Attempts int
+	Mode       VoiceMode
+	Timeout    time.Duration
+	Attempts   int
+	RetryDelay time.Duration
 }
 
 // Config is the tgpager configuration.
@@ -295,6 +296,10 @@ var VoiceDescriptor = figureout.MustDerive(
 		figureout.Value(s, &c.Attempts, "attempts").
 			Doc("How many times to try sending.").
 			InRange(1, 100).ApplyDefault(3)
+		figureout.Value(s, &c.RetryDelay, "retry_delay").
+			Doc("Delay between send attempts. A FLOOD_WAIT from Telegram wins " +
+				"over this when it asks for longer.").
+			AtLeast(0).ApplyDefault(2 * time.Second)
 	},
 )
 

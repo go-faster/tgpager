@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-faster/errors"
+	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/calls"
 	"github.com/pion/rtp"
 	"go.opentelemetry.io/otel/attribute"
@@ -60,7 +61,7 @@ func (c *Client) Ring(ctx context.Context, fn func(ctx context.Context, call *Ca
 	)
 	defer span.End()
 
-	err := c.retry(ctx, func(ctx context.Context, lg *zap.Logger) error {
+	err := c.retry(ctx, c.attempts, c.retryDelay, func(ctx context.Context, lg *zap.Logger) error {
 		return c.ringOnce(ctx, lg, fn)
 	})
 	if err != nil {
@@ -70,18 +71,19 @@ func (c *Client) Ring(ctx context.Context, fn func(ctx context.Context, call *Ca
 	return err
 }
 
-// retry runs attempt up to c.attempts times, pausing c.retryDelay between tries.
+// retry runs attempt up to attempts times, pausing delay between tries.
 // A canceled ctx stops it immediately rather than burning the remaining attempts.
-func (c *Client) retry(ctx context.Context, attempt func(context.Context, *zap.Logger) error) error {
+func (c *Client) retry(ctx context.Context, attempts int, delay time.Duration, attempt func(context.Context, *zap.Logger) error) error {
 	var lastErr error
-	for n := 1; n <= c.attempts; n++ {
-		lg := c.lg.With(zap.Int("attempt", n), zap.Int("attempts", c.attempts))
+	wait := delay
+	for n := 1; n <= attempts; n++ {
+		lg := c.lg.With(zap.Int("attempt", n), zap.Int("attempts", attempts))
 
 		if n > 1 {
 			select {
 			case <-ctx.Done():
 				return errors.Wrap(ctx.Err(), "retry")
-			case <-time.After(c.retryDelay):
+			case <-time.After(wait):
 			}
 		}
 
@@ -92,10 +94,24 @@ func (c *Client) retry(ctx context.Context, attempt func(context.Context, *zap.L
 		if ctx.Err() != nil {
 			return err
 		}
-		lg.Warn("Call attempt failed", zap.Error(err))
+		lg.Warn("Attempt failed", zap.Error(err))
 		lastErr = err
+		wait = retryWait(err, delay, lg)
 	}
-	return errors.Wrapf(lastErr, "all %d call attempts failed", c.attempts)
+	return errors.Wrapf(lastErr, "all %d attempts failed", attempts)
+}
+
+// retryWait honors FLOOD_WAIT. Telegram states exactly how long it wants to
+// be left alone, and retrying sooner burns the remaining attempts on errors it
+// has already told us the answer to. No backoff library: there is nothing to
+// guess when the server says the number.
+func retryWait(err error, base time.Duration, lg *zap.Logger) time.Duration {
+	flood, ok := telegram.AsFloodWait(err)
+	if !ok || flood <= base {
+		return base
+	}
+	lg.Warn("Flood wait, backing off as instructed", zap.Duration("wait", flood))
+	return flood
 }
 
 func (c *Client) ringOnce(ctx context.Context, lg *zap.Logger, fn func(context.Context, *Call) error) (err error) {

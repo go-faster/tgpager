@@ -221,6 +221,27 @@ The test that matters most: `mode: fallback` with a call that never connects
 still produces a voice message, and a send that fails does not turn a
 successful call into a failed page.
 
+## Trying it
+
+`tgpager -voice` renders and sends one test voice message, then exits,
+regardless of `voice.mode` — asking for it is the request. It is the message
+counterpart of `-check`, and unlike `-check` it is safe to point at your own
+account, where it lands in Saved Messages.
+
+Sending on every `-check` is still not on: that would message the on-call
+every time a deploy pipeline runs.
+
+## Retries
+
+There is no backoff library, and the delay is fixed rather than exponential.
+Exponential backoff estimates a capacity nobody published; Telegram publishes
+it. A `FLOOD_WAIT_30` says thirty seconds, so `retryWait` waits thirty seconds,
+and retrying sooner would spend the remaining attempts on an answer already
+given. The configured delay is the floor for everything else.
+
+Call and voice retries are configured separately. A send that keeps failing
+costs time; a call that keeps failing rings a person.
+
 ## Non-goals
 
 - Text messages. Genuinely useful, genuinely a separate feature.
