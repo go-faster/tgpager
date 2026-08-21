@@ -160,69 +160,6 @@ $ tgpager -voice
 That sends one test voice message to `peer` and exits, whatever `voice.mode`
 says. Point `peer` at your own account and it lands in Saved Messages.
 
-## Docker
-
-[deploy/docker-compose.yml](deploy/docker-compose.yml) and
-[deploy/tgpager.yml](deploy/tgpager.yml) are a working stack: tgpager plus a
-[Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) service
-speaking the [Portal GLaDOS voice](https://huggingface.co/WarriorMama777/GLaDOS_TTS),
-so a page is announced by the voice most likely to be believed about a
-cascading failure.
-
-Upstream publishes an image, `litagin/style-bert-vits2`, which ships no CMD
-because it is built to be driven; the compose file drives it and mounts the
-config in [deploy/glados/](deploy/glados). Synthesis runs on CPU, which is
-enough: upstream is explicit that a GPU is needed for training, not inference.
-The first start downloads several GB of BERT models onto a volume, which is why
-its healthcheck allows fifteen minutes to come up. Drop the service and the
-`tts` section to page with the tone alone.
-
-From `deploy/`:
-
-```console
-$ mkdir -p secrets
-$ printf '%s' "$APP_HASH"     > secrets/telegram_app_hash
-$ printf '%s' "$WEBHOOK_TOKEN" > secrets/webhook_token
-$ cp /path/to/alert.ogg .
-$ $EDITOR tgpager.yml            # app_id and peer
-```
-
-The voice itself is not vendored. Put the three files Style-Bert-VITS2 expects
-for it — the `.safetensors` checkpoint, `config.json` and `style_vectors.npy` —
-under `glados/model_assets/Portal_GLaDOS_v1/`. Any Style-Bert-VITS2 voice works;
-`model_name` in `tgpager.yml` is the directory name.
-
-Then log in once. It is interactive — Telegram sends a code — and it is the
-one step that cannot be automated:
-
-```console
-$ docker compose run --rm -it tgpager -login
-$ docker compose up -d
-```
-
-The session lands on a named volume, so restarts and image upgrades do not
-require logging in again. Check it before trusting it:
-
-```console
-$ docker compose run --rm tgpager -check    # config and speech provider
-$ docker compose run --rm tgpager -voice    # sends one test voice message
-```
-
-Three things that are easy to get wrong, and are already handled here:
-
-- **Secrets are files.** Docker mounts them under `/run/secrets`, so the config
-  uses the `{file: …}` spelling rather than baking credentials into an image or
-  a compose file.
-- **Metrics bind to localhost** by default, where nothing outside the container
-  can reach them. The compose file sets `METRICS_ADDR` to fix that, and exposes
-  `/metrics` only on the host loopback.
-- **The container runs unprivileged**, so the data directory is created in the
-  image and owned by that user. A named volume mounted on a path the image does
-  not have is created root-owned, and login then fails with `Permission denied`.
-
-There is no health endpoint; the healthcheck uses `/metrics`, which is enough
-to tell a live process from a wedged one.
-
 ### As a bot
 
 Calls require a user account, but a voice message does not: it is an ordinary
@@ -240,6 +177,15 @@ voice:
 `mode: only` is the only mode a bot can serve, and any other is rejected at
 startup rather than failing at each page. The target must have started the bot
 for it to be allowed to message them.
+
+## Docker
+
+[deploy/](deploy) is a working stack: tgpager plus a
+[Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) service
+speaking the [Portal GLaDOS voice](https://huggingface.co/WarriorMama777/GLaDOS_TTS),
+so a page is announced by the voice most likely to be believed about a
+cascading failure. See [deploy/README.md](deploy/README.md) for the setup, the
+model download and running it as a bot.
 
 ## Sending a test alert
 
