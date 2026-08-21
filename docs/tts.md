@@ -140,6 +140,35 @@ because zero is a real multiplier and not a way to say "unset".
 Both feed the cache fingerprint along with model and voice: changing how a line
 is delivered must not serve the previous recording.
 
+## Self-hosted voice models
+
+A model server — Style-Bert-VITS2, GPT-SoVITS, a Piper HTTP wrapper — needs no
+provider of its own. The `command` provider reaches one through curl:
+
+```yaml
+tts:
+  provider:
+    type: command
+    name: sh
+    args:
+      - -c
+      - exec curl -sf --get --data-urlencode "text=$1" http://localhost:5000/voice -o "$2"
+      - sh
+      - "{{text}}"
+      - "{{output}}"
+    output_format: wav
+```
+
+An endpoint that speaks the OpenAI shape is better served by the `openai`
+provider with `base_url` pointed at it.
+
+Neither route needs tgpager to know which model it is talking to, which is the
+point of keeping `Audio.Format` loose and letting ffmpeg normalize.
+
+Model weights are not shipped and not vendored. A voice cloned from a game
+character is a derivative of someone's performance, and the licence on the
+weights is the operator's to accept.
+
 ## Caching
 
 Alertmanager resends a firing alert every `repeat_interval`, so an uncached
