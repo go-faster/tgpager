@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/go-faster/tgpager/main/config.schema.json
+#
+# Companion to docker-compose.yml. Paths are container paths.
+
+telegram:
+  app_id: 123456
+  # Docker mounts secrets as files, which is the spelling to use for them.
+  app_hash:
+    file: /run/secrets/telegram_app_hash
+  # On the named volume: this is what -login writes, and losing it means
+  # logging in again.
+  session: /home/tgpager/data/session.json
+
+peer: "@oncall"
+audio: /home/tgpager/alert.ogg
+peer_cache: /home/tgpager/data/peers.bolt
+
+webhook:
+  addr: ":8080"
+  token:
+    file: /run/secrets/webhook_token
+
+# A missed call records nothing; this leaves the page in the chat.
+voice:
+  mode: fallback
+
+# Speech is optional. Without it a page plays the tone alone.
+# tts:
+#   provider:
+#     type: openai
+#     model: gpt-4o-mini-tts
+#     api_key:
+#       file: /run/secrets/openai_api_key
+#   cache:
+#     dir: /home/tgpager/data/tts-cache

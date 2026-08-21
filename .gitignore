@@ -13,3 +13,7 @@ tone.ogg
 # Editors
 .idea/
 .vscode/
+
+# Docker deployment inputs, which are local and often secret.
+deploy/secrets/
+deploy/alert.ogg

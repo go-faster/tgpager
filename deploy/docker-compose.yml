@@ -1,0 +1,44 @@
+# tgpager as a service. See README.md for the bootstrap, which needs one
+# interactive run to create the Telegram session.
+name: tgpager
+
+services:
+  tgpager:
+    image: ghcr.io/go-faster/tgpager:latest
+    restart: unless-stopped
+    environment:
+      # The SDK binds metrics to localhost, which nothing outside the container
+      # can reach. Bind them to the container's interfaces instead.
+      METRICS_ADDR: ":9464"
+    ports:
+      - "8080:8080"
+      # Metrics. Drop this line to keep them off the host.
+      - "127.0.0.1:9464:9464"
+    volumes:
+      # Session, peer cache and synthesized audio. Losing it means logging in
+      # again, so it is a named volume rather than a bind mount.
+      - data:/home/tgpager/data
+      # The image's working directory is /home/tgpager, so this is the default
+      # config path and every command below needs no -config flag.
+      - ./tgpager.yml:/home/tgpager/tgpager.yml:ro
+      - ./alert.ogg:/home/tgpager/alert.ogg:ro
+    secrets:
+      - telegram_app_hash
+      - webhook_token
+    # There is no health endpoint; /metrics is the closest thing to one, and it
+    # is enough to tell a live process from a wedged one.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9464/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+secrets:
+  telegram_app_hash:
+    file: ./secrets/telegram_app_hash
+  webhook_token:
+    file: ./secrets/webhook_token
+
+volumes:
+  data:

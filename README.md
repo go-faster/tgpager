@@ -160,6 +160,50 @@ $ tgpager -voice
 That sends one test voice message to `peer` and exits, whatever `voice.mode`
 says. Point `peer` at your own account and it lands in Saved Messages.
 
+## Docker
+
+[deploy/docker-compose.yml](deploy/docker-compose.yml) and
+[deploy/tgpager.yml](deploy/tgpager.yml) are a working stack. From `deploy/`:
+
+```console
+$ mkdir -p secrets
+$ printf '%s' "$APP_HASH"     > secrets/telegram_app_hash
+$ printf '%s' "$WEBHOOK_TOKEN" > secrets/webhook_token
+$ cp /path/to/alert.ogg .
+$ $EDITOR tgpager.yml            # app_id and peer
+```
+
+Then log in once. It is interactive — Telegram sends a code — and it is the
+one step that cannot be automated:
+
+```console
+$ docker compose run --rm -it tgpager -login
+$ docker compose up -d
+```
+
+The session lands on a named volume, so restarts and image upgrades do not
+require logging in again. Check it before trusting it:
+
+```console
+$ docker compose run --rm tgpager -check    # config and speech provider
+$ docker compose run --rm tgpager -voice    # sends one test voice message
+```
+
+Three things that are easy to get wrong, and are already handled here:
+
+- **Secrets are files.** Docker mounts them under `/run/secrets`, so the config
+  uses the `{file: …}` spelling rather than baking credentials into an image or
+  a compose file.
+- **Metrics bind to localhost** by default, where nothing outside the container
+  can reach them. The compose file sets `METRICS_ADDR` to fix that, and exposes
+  `/metrics` only on the host loopback.
+- **The container runs unprivileged**, so the data directory is created in the
+  image and owned by that user. A named volume mounted on a path the image does
+  not have is created root-owned, and login then fails with `Permission denied`.
+
+There is no health endpoint; the healthcheck uses `/metrics`, which is enough
+to tell a live process from a wedged one.
+
 ## Peer
 
 `-peer` accepts a username, phone, deeplink or raw ID:

@@ -6,7 +6,12 @@ ARG TARGETPLATFORM
 # ffmpeg encodes the alert audio to Opus RTP, so it must be in the image.
 RUN apk add --no-cache ca-certificates tzdata ffmpeg \
     && addgroup -S tgpager \
-    && adduser -S tgpager -G tgpager -h /home/tgpager
+    && adduser -S tgpager -G tgpager -h /home/tgpager \
+    # Created here so a named volume mounted on it inherits the owner. Docker
+    # creates a missing mount point as root, which the unprivileged user then
+    # cannot write the session file into.
+    && mkdir -p /home/tgpager/data \
+    && chown tgpager:tgpager /home/tgpager/data
 
 WORKDIR /home/tgpager
 
@@ -14,5 +19,7 @@ WORKDIR /home/tgpager
 COPY ${TARGETPLATFORM}/tgpager /usr/local/bin/tgpager
 
 USER tgpager
+
+VOLUME ["/home/tgpager/data"]
 
 ENTRYPOINT ["tgpager"]
