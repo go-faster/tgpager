@@ -20,6 +20,7 @@ import (
 	"github.com/go-faster/tgpager/internal/peercache"
 	"github.com/go-faster/tgpager/internal/server"
 	"github.com/go-faster/tgpager/internal/tgcall"
+	"github.com/go-faster/tgpager/internal/tts"
 )
 
 func main() {
@@ -101,6 +102,16 @@ func run(ctx context.Context, lg *zap.Logger, t *app.Telemetry, cfg config.Confi
 		IdleTimeout:       60 * time.Second,
 	}
 
+	speaker, err := tts.Build(cfg, tts.BuildOptions{
+		Logger:         lg,
+		TracerProvider: t.TracerProvider(),
+		MeterProvider:  t.MeterProvider(),
+		Tone:           cfg.Audio,
+	})
+	if err != nil {
+		return errors.Wrap(err, "build speaker")
+	}
+
 	streamer := audio.NewFFmpeg()
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -133,7 +144,7 @@ func run(ctx context.Context, lg *zap.Logger, t *app.Telemetry, cfg config.Confi
 				case <-ctx.Done():
 					return nil
 				case req := <-srv.Queue():
-					processCall(ctx, lg, callClient, streamer, cfg.Audio, req)
+					processCall(ctx, lg, callClient, streamer, speaker, req)
 					srv.Done(req.GroupKey)
 				}
 			}
@@ -157,12 +168,19 @@ func runLogin(tg config.Telegram) error {
 	return nil
 }
 
-func processCall(ctx context.Context, lg *zap.Logger, client *tgcall.Client, streamer audio.Streamer, audioFile string, req server.CallRequest) {
+func processCall(ctx context.Context, lg *zap.Logger, client *tgcall.Client, streamer audio.Streamer, speaker *tts.Speaker, req server.CallRequest) {
 	lg = lg.With(zap.String("groupKey", req.GroupKey))
 
+	// Synthesized before the call is placed: doing it after connect would play
+	// the callee an HTTP round trip of silence.
+	spec := speaker.Speak(ctx, req.Payload)
+
 	err := client.Ring(ctx, func(ctx context.Context, call *tgcall.Call) error {
-		lg.Info("Streaming audio", zap.String("file", audioFile))
-		return streamer.Stream(ctx, call.WriteRTP, audioFile, audio.WithLogger(lg))
+		lg.Info("Streaming audio",
+			zap.Strings("segments", spec.Segments),
+			zap.Int("repeat", spec.Repeat),
+		)
+		return streamer.Stream(ctx, call.WriteRTP, spec, audio.WithLogger(lg))
 	})
 	if err != nil {
 		lg.Error("Failed to page", zap.Error(err))

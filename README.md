@@ -59,6 +59,37 @@ receivers:
 
 `ffmpeg` must be on `PATH`; it encodes the audio to Opus RTP.
 
+## Speech
+
+By default a page plays `audio` alone. Add a `tts` section and the call says
+what fired: the tone wakes the callee, the speech tells them what broke, and
+the pair repeats so answering mid-sentence still works.
+
+```yaml
+tts:
+  provider:
+    type: openai            # OpenAI, OpenRouter, Azure, or a local compatible server
+    base_url: https://openrouter.ai/api/v1
+    model: openai/gpt-4o-mini-tts
+    voice: alloy
+  repeat: 3
+```
+
+Or synthesize locally, which keeps working when the network is the thing that
+broke:
+
+```yaml
+tts:
+  provider:
+    type: command
+    name: piper
+    args: ["--model", "en_US.onnx", "--output_file", "{{output}}"]
+```
+
+Synthesis happens before the call is placed, and its result is cached by
+content so a resent alert is not re-synthesized. **If it fails for any reason
+the page still happens**, playing `audio` alone.
+
 ## Peer
 
 `-peer` accepts a username, phone, deeplink or raw ID:

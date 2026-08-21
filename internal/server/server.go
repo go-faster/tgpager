@@ -16,6 +16,8 @@ import (
 
 type CallRequest struct {
 	GroupKey string
+	// Payload is carried through so the call can say what fired.
+	Payload alertmanager.WebhookPayload
 }
 
 // maxBodySize bounds an Alertmanager payload. The webhook is unauthenticated
@@ -162,6 +164,7 @@ func (s *Server) handleAlertmanager(w http.ResponseWriter, r *http.Request) {
 
 	req := CallRequest{
 		GroupKey: payload.GroupKey,
+		Payload:  payload,
 	}
 	if !s.enqueue(req) {
 		s.metrics.webhooks.Add(r.Context(), 1, resultAttr("duplicate"))

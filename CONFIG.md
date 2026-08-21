@@ -7,8 +7,9 @@
 | [`telegram`](#telegram) | object | yes |  |  | `telegram` |  |  |
 | [`webhook`](#webhook) | object | yes |  |  | `webhook` |  |  |
 | [`call`](#call) | object | yes |  |  | `call` |  |  |
+| [`tts`](#tts) | object | no |  |  | `tts` |  |  |
 | `peer` | string | yes |  | non-empty | `peer` | `TGPAGER_PEER` | Call target: @username, phone, t.me link, or id:<user-id>[:<access-hash>]. |
-| `audio` | string | yes |  | non-empty | `audio` | `TGPAGER_AUDIO` | Audio file played into the call. |
+| `audio` | string | yes |  | non-empty | `audio` | `TGPAGER_AUDIO` | Audio file played into the call, and the tone before speech. |
 | `peer_cache` | string | no | `"peers.bolt"` | non-empty | `peer_cache` | `TGPAGER_PEER_CACHE` | Path to the peer access hash cache. Account-scoped. |
 | `debug` | boolean | no | `false` |  | `debug` | `TGPAGER_DEBUG` | Enable debug logging. |
 
@@ -34,3 +35,40 @@
 | `connect_timeout` | duration | no | `30s` | at least 1s | `call.connect_timeout` | `TGPAGER_CALL_CONNECT_TIMEOUT` | How long an accepted call may take to negotiate media. |
 | `attempts` | integer | no | `3` | at least 1, at most 100 | `call.attempts` | `TGPAGER_CALL_ATTEMPTS` | How many times to place a call before giving up. |
 | `retry_delay` | duration | no | `10s` | at least 0s | `call.retry_delay` | `TGPAGER_CALL_RETRY_DELAY` | Delay between call attempts. |
+
+## tts
+
+| Name | Type | Required | Default | Constraints | yaml | env | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [`provider`](#ttsprovider-type-openai) | union | yes |  |  | `tts.provider` |  | Speech provider. Omit to page with the audio file alone. |
+| `template` | string | no |  |  | `tts.template` | `TGPAGER_TTS_TEMPLATE` | Go template rendered into the spoken sentence. |
+| `cache` | string | no | `"tts-cache"` | non-empty | `tts.cache` | `TGPAGER_TTS_CACHE` | Directory holding synthesized audio, reused across resends. |
+| `repeat` | integer | no | `3` | at least 1, at most 10 | `tts.repeat` | `TGPAGER_TTS_REPEAT` | How many times to play tone and speech, so a groggy callee gets a second chance. |
+| `timeout` | duration | no | `10s` | at least 1s | `tts.timeout` | `TGPAGER_TTS_TIMEOUT` | How long to wait for synthesis before paging without speech. |
+
+## tts.provider (type: openai)
+
+Speech provider. Omit to page with the audio file alone.
+
+Selected by `type: openai`.
+
+| Name | Type | Required | Default | Values | Constraints | yaml | env | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `type` | string | yes |  | `openai` |  | `tts.provider.type` | `TGPAGER_TTS_PROVIDER_TYPE` | Selects this variant. |
+| `base_url` | string | no | `"https://api.openai.com/v1"` |  | non-empty | `tts.provider.base_url` | `TGPAGER_TTS_PROVIDER_BASE_URL` | Base URL of the speech endpoint, without a trailing /audio/speech. |
+| `model` | string | yes |  |  | non-empty | `tts.provider.model` | `TGPAGER_TTS_PROVIDER_MODEL` | Speech model, for example openai/gpt-4o-mini-tts. |
+| `voice` | string | no | `"alloy"` |  |  | `tts.provider.voice` | `TGPAGER_TTS_PROVIDER_VOICE` | Voice name, as understood by the model. |
+| `format` | string | no | `"mp3"` |  | non-empty | `tts.provider.format` | `TGPAGER_TTS_PROVIDER_FORMAT` | Audio format to request. |
+
+## tts.provider (type: command)
+
+Speech provider. Omit to page with the audio file alone.
+
+Selected by `type: command`.
+
+| Name | Type | Required | Default | Values | Constraints | yaml | env | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `type` | string | yes |  | `command` |  | `tts.provider.type` | `TGPAGER_TTS_PROVIDER_TYPE` | Selects this variant. |
+| `name` | string | yes |  |  | non-empty | `tts.provider.name` | `TGPAGER_TTS_PROVIDER_NAME` | Executable to run, for example piper. |
+| `args` | list of string | no |  |  |  | `tts.provider.args` | `TGPAGER_TTS_PROVIDER_ARGS` | Arguments. {{text}} is replaced by the text to speak, otherwise it is written to stdin; {{output}} is replaced by a temporary file to write, otherwise audio is read from stdout. |
+| `output_format` | string | no | `"wav"` |  | non-empty | `tts.provider.output_format` | `TGPAGER_TTS_PROVIDER_OUTPUT_FORMAT` | Audio format the command produces. |

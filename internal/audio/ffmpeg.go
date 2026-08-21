@@ -33,7 +33,11 @@ func WithLogger(lg *zap.Logger) StreamOption {
 	}
 }
 
-func (f *FFmpegStreamer) Stream(ctx context.Context, write func(*rtp.Packet) error, file string, opts ...StreamOption) error {
+func (f *FFmpegStreamer) Stream(ctx context.Context, write func(*rtp.Packet) error, spec Spec, opts ...StreamOption) error {
+	if err := spec.Validate(); err != nil {
+		return err
+	}
+
 	o := &streamOptions{
 		logger: zap.NewNop(),
 	}
@@ -53,9 +57,13 @@ func (f *FFmpegStreamer) Stream(ctx context.Context, write func(*rtp.Packet) err
 	// #nosec G404 -- an RTP SSRC is a stream identifier, not a secret.
 	ssrc := rand.Uint32()
 
-	args := []string{
-		"-re",
-		"-i", file,
+	args := []string{"-re"}
+	for _, seg := range spec.Segments {
+		args = append(args, "-i", seg)
+	}
+	args = append(args,
+		"-filter_complex", concatFilter(len(spec.Segments), spec.Repeat),
+		"-map", "[out]",
 		"-vn",
 		"-c:a", "libopus",
 		"-ar", fmt.Sprintf("%d", sampleRate),
@@ -65,7 +73,7 @@ func (f *FFmpegStreamer) Stream(ctx context.Context, write func(*rtp.Packet) err
 		"-ssrc", fmt.Sprintf("%d", ssrc),
 		"-f", "rtp",
 		fmt.Sprintf("rtp://%s:%d", local.IP.String(), local.Port),
-	}
+	)
 
 	lg.Debug("Starting ffmpeg", zap.String("path", f.ffmpegPath), zap.Strings("args", args))
 
@@ -133,6 +141,21 @@ func (f *FFmpegStreamer) Stream(ctx context.Context, write func(*rtp.Packet) err
 			return errors.Wrap(err, "write rtp")
 		}
 	}
+}
+
+// concatFilter joins every input end to end, repeating the whole sequence.
+// The concat filter rather than the demuxer: a synthesized MP3 and a local Ogg
+// tone differ in codec and sample rate, which the demuxer refuses.
+func concatFilter(inputs, repeat int) string {
+	var refs strings.Builder
+	n := 0
+	for range repeat {
+		for i := range inputs {
+			fmt.Fprintf(&refs, "[%d:a]", i)
+			n++
+		}
+	}
+	return fmt.Sprintf("%sconcat=n=%d:v=0:a=1[out]", refs.String(), n)
 }
 
 func finishFFmpeg(waitErr error, stderrCh <-chan []byte, lg *zap.Logger) error {

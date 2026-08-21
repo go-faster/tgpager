@@ -1,6 +1,10 @@
 # TTS provider support
 
-Status: accepted, not yet implemented.
+Status: implemented.
+
+Two things changed during implementation, both recorded below: the shared
+`timeout` moved up out of the provider variants, and `command`'s format is
+named `output_format`.
 
 Today every page plays the same `-audio` file. The alert is decoded and then
 discarded, so the callee learns only that *something* fired. This adds speech
@@ -94,21 +98,32 @@ needs to take an ordered segment list plus a repeat count.
 
 ```yaml
 tts:
-  type: openai
-  openai:
+  provider:
+    type: openai
     base_url: https://openrouter.ai/api/v1
     api_key: ...              # figureout.Secret()
     model: openai/gpt-4o-mini-tts
     voice: alloy
-    timeout: 5s
   template: |
     {{ .Status }} alert. {{ .CommonLabels.alertname }}.
     Severity {{ .CommonLabels.severity }}. {{ .CommonAnnotations.summary }}
   repeat: 3
+  timeout: 10s
 ```
 
 A figureout `OneOf` with `Discriminator("type")` and one `Variant` per provider
 gives per-variant validation, documentation and JSON schema for free.
+
+The whole `tts` section is an optional object rather than an optional union,
+because a figureout union is always required. Absent means speech is off.
+
+**Variants share their path.** `tts.provider.format` is one path whichever
+variant is selected, so a field name repeated across variants becomes a single
+path with two environment aliases: setting the one named for `command` would
+silently configure `openai`. Verified by experiment, not assumed. Hence the
+shared `timeout` lives on `tts` where it is genuinely shared, and `command`
+names its format `output_format` — a format the binary *produces*, which is a
+different thing from a format `openai` is *asked* for.
 
 Rendered text is capped in length. Alert labels come from metrics and are
 attacker-influenceable, and an unbounded label should not turn into an

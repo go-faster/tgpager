@@ -6,7 +6,7 @@
       "type": "string"
     },
     "audio": {
-      "description": "Audio file played into the call.",
+      "description": "Audio file played into the call, and the tone before speech.",
       "minLength": 1,
       "type": "string"
     },
@@ -103,6 +103,149 @@
       "required": [
         "app_id",
         "app_hash"
+      ],
+      "type": "object"
+    },
+    "tts": {
+      "additionalProperties": false,
+      "properties": {
+        "cache": {
+          "default": "tts-cache",
+          "description": "Directory holding synthesized audio, reused across resends.",
+          "minLength": 1,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "description": "Speech provider. Omit to page with the audio file alone.",
+          "discriminator": {
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "api_key": {
+                  "description": "Bearer token for the speech endpoint.",
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "writeOnly": true
+                },
+                "base_url": {
+                  "default": "https://api.openai.com/v1",
+                  "description": "Base URL of the speech endpoint, without a trailing /audio/speech.",
+                  "minLength": 1,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "format": {
+                  "default": "mp3",
+                  "description": "Audio format to request.",
+                  "minLength": 1,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "model": {
+                  "description": "Speech model, for example openai/gpt-4o-mini-tts.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": {
+                  "const": "openai",
+                  "type": "string"
+                },
+                "voice": {
+                  "default": "alloy",
+                  "description": "Voice name, as understood by the model.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "model"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "description": "Arguments. {{text}} is replaced by the text to speak, otherwise it is written to stdin; {{output}} is replaced by a temporary file to write, otherwise audio is read from stdout.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "description": "Executable to run, for example piper.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "output_format": {
+                  "default": "wav",
+                  "description": "Audio format the command produces.",
+                  "minLength": 1,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "const": "command",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "name"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "repeat": {
+          "default": 3,
+          "description": "How many times to play tone and speech, so a groggy callee gets a second chance.",
+          "maximum": 10,
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "template": {
+          "description": "Go template rendered into the spoken sentence.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeout": {
+          "default": "10s",
+          "description": "How long to wait for synthesis before paging without speech.",
+          "format": "duration",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "provider"
       ],
       "type": "object"
     },

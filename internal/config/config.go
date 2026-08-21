@@ -39,11 +39,45 @@ type Webhook struct {
 	QueueSize int
 }
 
+// OpenAITTS is an OpenAI-compatible /audio/speech endpoint. BaseURL selects
+// the vendor: OpenAI, OpenRouter, Azure or a local compatible server.
+type OpenAITTS struct {
+	BaseURL string
+	APIKey  string
+	Model   string
+	Voice   string
+	Format  string
+}
+
+// CommandTTS synthesizes by running a local binary, such as piper or espeak-ng.
+type CommandTTS struct {
+	Name         string
+	Args         []string
+	OutputFormat string
+}
+
+// TTSProvider is the selected provider. Exactly one variant is populated.
+type TTSProvider struct {
+	OpenAI  *OpenAITTS
+	Command *CommandTTS
+}
+
+// TTS turns an alert into speech played after the tone. The whole section is
+// optional: absent means pages play the audio file alone.
+type TTS struct {
+	Provider TTSProvider
+	Template string
+	Cache    string
+	Repeat   int
+	Timeout  time.Duration
+}
+
 // Config is the tgpager configuration.
 type Config struct {
 	Telegram  Telegram
 	Webhook   Webhook
 	Call      Call
+	TTS       figureout.OptionalOf[TTS]
 	Peer      string
 	Audio     string
 	PeerCache string
@@ -94,18 +128,76 @@ var WebhookDescriptor = figureout.MustDerive(
 	},
 )
 
+// OpenAITTSDescriptor describes [OpenAITTS].
+var OpenAITTSDescriptor = figureout.MustDerive(
+	func(c *OpenAITTS, s *figureout.Schema[OpenAITTS]) {
+		figureout.Value(s, &c.BaseURL, "base_url").
+			Doc("Base URL of the speech endpoint, without a trailing /audio/speech.").
+			NonEmpty().ApplyDefault("https://api.openai.com/v1")
+		figureout.Value(s, &c.APIKey, "api_key", figureout.Secret()).
+			Doc("Bearer token for the speech endpoint.")
+		figureout.Explicit(s, &c.Model, "model").
+			Doc("Speech model, for example openai/gpt-4o-mini-tts.").NonEmpty()
+		figureout.Value(s, &c.Voice, "voice").
+			Doc("Voice name, as understood by the model.").ApplyDefault("alloy")
+		// Variants share the tts.provider path, so a field name repeated across
+		// them would be one path with two aliases: setting the "command" name
+		// would silently configure openai. Names are kept distinct instead.
+		figureout.Value(s, &c.Format, "format").
+			Doc("Audio format to request.").NonEmpty().ApplyDefault("mp3")
+	},
+)
+
+// CommandTTSDescriptor describes [CommandTTS].
+var CommandTTSDescriptor = figureout.MustDerive(
+	func(c *CommandTTS, s *figureout.Schema[CommandTTS]) {
+		figureout.Explicit(s, &c.Name, "name").
+			Doc("Executable to run, for example piper.").NonEmpty()
+		figureout.Value(s, &c.Args, "args").
+			Doc(`Arguments. {{text}} is replaced by the text to speak, otherwise ` +
+				`it is written to stdin; {{output}} is replaced by a temporary ` +
+				`file to write, otherwise audio is read from stdout.`)
+		figureout.Value(s, &c.OutputFormat, "output_format").
+			Doc("Audio format the command produces.").NonEmpty().ApplyDefault("wav")
+	},
+)
+
+// TTSDescriptor describes [TTS].
+var TTSDescriptor = figureout.MustDerive(
+	func(c *TTS, s *figureout.Schema[TTS]) {
+		figureout.OneOf(s, &c.Provider, "provider",
+			figureout.Discriminator("type"),
+			figureout.Variant("openai", &c.Provider.OpenAI, OpenAITTSDescriptor),
+			figureout.Variant("command", &c.Provider.Command, CommandTTSDescriptor),
+		).Doc("Speech provider. Omit to page with the audio file alone.")
+
+		figureout.Value(s, &c.Template, "template").
+			Doc("Go template rendered into the spoken sentence.")
+		figureout.Value(s, &c.Cache, "cache").
+			Doc("Directory holding synthesized audio, reused across resends.").
+			NonEmpty().ApplyDefault("tts-cache")
+		figureout.Value(s, &c.Repeat, "repeat").
+			Doc("How many times to play tone and speech, so a groggy callee gets a second chance.").
+			InRange(1, 10).ApplyDefault(3)
+		figureout.Value(s, &c.Timeout, "timeout").
+			Doc("How long to wait for synthesis before paging without speech.").
+			AtLeast(time.Second).ApplyDefault(10 * time.Second)
+	},
+)
+
 // Descriptor describes [Config].
 var Descriptor = figureout.MustDerive(
 	func(c *Config, s *figureout.Schema[Config]) {
 		figureout.Object(s, &c.Telegram, "telegram", TelegramDescriptor)
 		figureout.Object(s, &c.Webhook, "webhook", WebhookDescriptor)
 		figureout.Object(s, &c.Call, "call", CallDescriptor)
+		figureout.OptionalObject(s, &c.TTS, "tts", TTSDescriptor)
 
 		figureout.Explicit(s, &c.Peer, "peer").
 			Doc("Call target: @username, phone, t.me link, or id:<user-id>[:<access-hash>].").
 			NonEmpty()
 		figureout.Explicit(s, &c.Audio, "audio").
-			Doc("Audio file played into the call.").NonEmpty()
+			Doc("Audio file played into the call, and the tone before speech.").NonEmpty()
 		figureout.Value(s, &c.PeerCache, "peer_cache").
 			Doc("Path to the peer access hash cache. Account-scoped.").
 			NonEmpty().ApplyDefault("peers.bolt")
