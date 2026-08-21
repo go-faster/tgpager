@@ -124,7 +124,9 @@ func (c *Client) resolvePeer(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrapf(err, "resolve peer %q as %s", c.peer, t.kind)
 	}
-	if _, isBot := user.ToBot(); isBot {
+	// Only meaningful when we are a user placing a call; a bot sending a
+	// message to a bot is merely useless, not impossible.
+	if _, isBot := user.ToBot(); isBot && c.botToken == "" {
 		return errors.Errorf("peer %q is a bot, calls require a user", c.peer)
 	}
 	// Neither the API docs nor TDLib forbid calling your own account, so this

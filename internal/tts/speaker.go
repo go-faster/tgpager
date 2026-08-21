@@ -200,7 +200,9 @@ func PreflightPayload() alertmanager.WebhookPayload {
 			"severity":  "warning",
 		},
 		CommonAnnotations: map[string]string{
-			"summary": "tgpager is starting up",
+			// Spelled out: a speech model has no way to know "tg" is two
+			// letters rather than a syllable, and reads tgpager as "psager".
+			"summary": "T G pager is starting up",
 		},
 	}
 }

@@ -40,6 +40,7 @@ type Client struct {
 	api     *tg.Client
 	peers   *peers.Manager
 
+	botToken    string
 	peer        string
 	peerUser    tg.InputUserClass
 	peerStorage peers.Storage
@@ -61,6 +62,12 @@ type Option func(*Client)
 
 func WithLogger(lg *zap.Logger) Option {
 	return func(c *Client) { c.lg = lg }
+}
+
+// WithBotToken authenticates as a bot rather than as a user. A bot can send a
+// voice message but cannot place a call, which Telegram reserves for users.
+func WithBotToken(token string) Option {
+	return func(c *Client) { c.botToken = token }
 }
 
 // WithPeer sets the call target: a @username, phone number or t.me link,
@@ -189,9 +196,28 @@ func (c *Client) AuthFlow(ctx context.Context) error {
 }
 
 func (c *Client) authenticate(ctx context.Context) error {
+	if c.botToken != "" {
+		return c.authenticateBot(ctx)
+	}
 	flow := auth.NewFlow(terminalAuth{}, auth.SendCodeOptions{})
 	if err := c.client.Auth().IfNecessary(ctx, flow); err != nil {
 		return errors.Wrap(err, "authenticate")
+	}
+	return nil
+}
+
+// authenticateBot signs in with a bot token, which needs no terminal and no
+// code, so it works unattended.
+func (c *Client) authenticateBot(ctx context.Context) error {
+	status, err := c.client.Auth().Status(ctx)
+	if err != nil {
+		return errors.Wrap(err, "auth status")
+	}
+	if status.Authorized {
+		return nil
+	}
+	if _, err := c.client.Auth().Bot(ctx, c.botToken); err != nil {
+		return errors.Wrap(err, "authenticate as bot")
 	}
 	return nil
 }

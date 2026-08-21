@@ -163,7 +163,19 @@ says. Point `peer` at your own account and it lands in Saved Messages.
 ## Docker
 
 [deploy/docker-compose.yml](deploy/docker-compose.yml) and
-[deploy/tgpager.yml](deploy/tgpager.yml) are a working stack. From `deploy/`:
+[deploy/tgpager.yml](deploy/tgpager.yml) are a working stack: tgpager plus a
+[Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) service
+speaking the [Portal GLaDOS voice](https://huggingface.co/WarriorMama777/GLaDOS_TTS),
+so a page is announced by the voice most likely to be believed about a
+cascading failure.
+
+Upstream ships no image, so [deploy/glados/](deploy/glados) builds one. It is
+CPU-only: the README there is explicit that a GPU is needed for training, not
+synthesis. The first start downloads several GB of BERT models onto a volume,
+which is why its healthcheck allows ten minutes to come up. Drop the service
+and the `tts` section to page with the tone alone.
+
+From `deploy/`:
 
 ```console
 $ mkdir -p secrets
@@ -203,6 +215,51 @@ Three things that are easy to get wrong, and are already handled here:
 
 There is no health endpoint; the healthcheck uses `/metrics`, which is enough
 to tell a live process from a wedged one.
+
+### As a bot
+
+Calls require a user account, but a voice message does not: it is an ordinary
+document with a flag set. Authenticating with a bot token needs no phone, no
+code and no session bootstrap, which suits an unattended deployment.
+
+```yaml
+telegram:
+  bot_token:
+    env: TG_BOT_TOKEN
+voice:
+  mode: only
+```
+
+`mode: only` is the only mode a bot can serve, and any other is rejected at
+startup rather than failing at each page. The target must have started the bot
+for it to be allowed to message them.
+
+## Sending a test alert
+
+The webhook speaks Alertmanager's payload format:
+
+```console
+$ curl -X POST http://localhost:8080/alertmanager \
+    -H 'Content-Type: application/json' \
+    -H 'Authorization: Bearer secret' \
+    -d '{
+      "version": "4",
+      "groupKey": "manual-test",
+      "status": "firing",
+      "commonLabels": {"alertname": "NodeExporterDown", "severity": "critical"},
+      "commonAnnotations": {"summary": "node exporter has been down for 5 minutes"},
+      "alerts": [{"status": "firing", "labels": {"alertname": "NodeExporterDown"}}]
+    }'
+```
+
+Drop the `Authorization` header if `webhook.token` is unset. The handler queues
+the page and returns immediately, so `202 Accepted` means accepted, not
+delivered — watch the logs for the outcome. A resolved alert is accepted and
+ignored; only `status: firing` pages.
+
+`groupKey` deduplicates while a page is in flight: a second request naming a
+`groupKey` already queued is accepted and dropped, so Alertmanager retrying
+does not page twice.
 
 ## Peer
 

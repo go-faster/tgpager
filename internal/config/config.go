@@ -22,9 +22,10 @@ const EnvPrefix = "TGPAGER_"
 // Telegram identifies the application to Telegram. Obtain a pair at
 // https://my.telegram.org.
 type Telegram struct {
-	AppID   int
-	AppHash Secret
-	Session string
+	AppID    int
+	AppHash  Secret
+	BotToken Secret
+	Session  string
 }
 
 // Call tunes how a page is placed.
@@ -167,6 +168,9 @@ var TelegramDescriptor = figureout.MustDerive(
 			Doc("Telegram application ID.").InRange(1, 1<<31-1)
 		secret(s, &c.AppHash, "app_hash").
 			Doc("Telegram application hash. Required.")
+		secret(s, &c.BotToken, "bot_token").
+			Doc("Authenticate as this bot instead of interactively as a user. " +
+				"Bots cannot place calls, so this only suits voice.mode: only.")
 		figureout.Value(s, &c.Session, "session").
 			Doc("Path to the session file. Holds credentials; keep it private.").
 			NonEmpty().ApplyDefault("session.json")
@@ -355,6 +359,7 @@ func resolveSecrets(cfg *Config, baseDir string) error {
 	}
 	all := []named{
 		{"telegram.app_hash", &cfg.Telegram.AppHash},
+		{"telegram.bot_token", &cfg.Telegram.BotToken},
 		{"webhook.token", &cfg.Webhook.Token},
 	}
 	// OpenAI is a pointer, so the copy from Value shares the credential.
@@ -369,6 +374,13 @@ func resolveSecrets(cfg *Config, baseDir string) error {
 	}
 	if cfg.Telegram.AppHash.Value == "" {
 		return errors.New("telegram.app_hash is required")
+	}
+	// Telegram reserves calls for users, so a bot that is expected to place
+	// one fails at every page. Better to refuse the combination up front.
+	if cfg.Telegram.BotToken.Value != "" && cfg.Voice.Mode.Calls() {
+		return errors.Errorf(
+			"telegram.bot_token is set but voice.mode is %q: bots cannot place calls, use \"only\"",
+			cfg.Voice.Mode)
 	}
 	return nil
 }

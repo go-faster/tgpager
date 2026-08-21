@@ -123,3 +123,84 @@ audio: tone.ogg
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "telegram.app_hash")
 }
+
+func TestBotTokenSpellings(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bot.txt"), []byte("123:from-file\n"), 0o600))
+	t.Setenv("TGPAGER_TEST_BOT_TOKEN", "123:from-env")
+
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"scalar", `bot_token: "123:literal"`, "123:literal"},
+		{"env", "bot_token:\n    env: TGPAGER_TEST_BOT_TOKEN", "123:from-env"},
+		{"file", "bot_token:\n    file: bot.txt", "123:from-file"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(dir, "config.yaml")
+			body := "telegram:\n  app_id: 1\n  app_hash: h\n  " + tt.body +
+				"\npeer: \"@oncall\"\naudio: tone.ogg\nvoice:\n  mode: only\n"
+			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+
+			cfg, _, err := Load(path)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, cfg.Telegram.BotToken.Value)
+		})
+	}
+}
+
+// TestBotTokenRejectsCallingModes guards the one combination that cannot work:
+// Telegram reserves calls for users, so a bot asked to place one fails at every
+// page rather than at startup.
+func TestBotTokenRejectsCallingModes(t *testing.T) {
+	for _, mode := range []VoiceMode{VoiceOff, VoiceFallback, VoiceAlways} {
+		t.Run(string(mode), func(t *testing.T) {
+			_, _, err := Load(writeYAML(t, `
+telegram:
+  app_id: 1
+  app_hash: h
+  bot_token: "123:abc"
+peer: "@oncall"
+audio: tone.ogg
+voice:
+  mode: `+string(mode)+"\n"))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "bots cannot place calls")
+		})
+	}
+}
+
+func TestBotTokenAllowsVoiceOnly(t *testing.T) {
+	cfg, _, err := Load(writeYAML(t, `
+telegram:
+  app_id: 1
+  app_hash: h
+  bot_token: "123:abc"
+peer: "@oncall"
+audio: tone.ogg
+voice:
+  mode: only
+`))
+	require.NoError(t, err)
+	require.Equal(t, "123:abc", cfg.Telegram.BotToken.Value)
+	require.False(t, cfg.Voice.Mode.Calls())
+}
+
+func TestNoBotTokenLeavesCallingModesAlone(t *testing.T) {
+	cfg, _, err := Load(writeYAML(t, `
+telegram:
+  app_id: 1
+  app_hash: h
+peer: "@oncall"
+audio: tone.ogg
+voice:
+  mode: fallback
+`))
+	require.NoError(t, err)
+	require.Empty(t, cfg.Telegram.BotToken.Value)
+	require.True(t, cfg.Voice.Mode.Calls())
+}
