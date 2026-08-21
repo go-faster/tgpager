@@ -1,3 +1,4 @@
+// Package tgcall places Telegram calls and streams audio into them.
 package tgcall
 
 import (
@@ -37,7 +38,7 @@ func (terminalAuth) AcceptTermsOfService(ctx context.Context, tos tg.HelpTermsOf
 	return errors.New("terms of service rejected")
 }
 
-func (terminalAuth) SignUp(ctx context.Context) (auth.UserInfo, error) {
+func (terminalAuth) SignUp(_ context.Context) (auth.UserInfo, error) {
 	return auth.UserInfo{}, errors.New("sign up not implemented")
 }
 

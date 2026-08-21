@@ -71,5 +71,5 @@ func TestClientRetryStopsOnCancel(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.Equal(t, 1, calls, "cancelled context must not burn remaining attempts")
+	require.Equal(t, 1, calls, "canceled context must not burn remaining attempts")
 }

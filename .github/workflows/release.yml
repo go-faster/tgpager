@@ -1,0 +1,62 @@
+name: release
+
+# Dispatched (not tag-triggered) so the run's ref is `main`, not the pushed
+# tag: GitHub Actions cache is scoped per-ref with no default-branch fallback
+# for tags, and a tag ref is used exactly once, so a tag-triggered run could
+# never see a warm cache. release-dispatch.yml relays the actual `push:
+# tags` event here via `gh workflow run --ref main`, which puts this run on
+# main's ref (and its cache) while still checking out the exact tagged
+# commit below.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag to release (e.g. v0.4.2)"
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Fetch tags
+        run: git fetch --force --tags
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Goreleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          install-only: true
+
+      - name: Release
+        run: goreleaser release --clean --timeout 60m
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

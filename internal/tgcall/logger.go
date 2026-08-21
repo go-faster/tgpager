@@ -16,11 +16,11 @@ func zapToGotdLog(lg *zap.Logger) log.Logger {
 	return &zapGotdLogger{lg: lg}
 }
 
-func (z *zapGotdLogger) Enabled(ctx context.Context, level log.Level) bool {
+func (z *zapGotdLogger) Enabled(_ context.Context, level log.Level) bool {
 	return z.lg.Core().Enabled(gotdLevelToZap(level))
 }
 
-func (z *zapGotdLogger) Log(ctx context.Context, level log.Level, msg string, attrs ...log.Attr) {
+func (z *zapGotdLogger) Log(_ context.Context, level log.Level, msg string, attrs ...log.Attr) {
 	fields := make([]zap.Field, 0, len(attrs))
 	for _, a := range attrs {
 		fields = append(fields, gotdAttrToZap(a))

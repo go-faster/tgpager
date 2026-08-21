@@ -138,16 +138,14 @@ func TestServer_ConcurrentEnqueue(t *testing.T) {
 	}`
 
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 			req := httptest.NewRequest(http.MethodPost, "/alertmanager", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			srv.ServeHTTP(rec, req)
 			require.Equal(t, http.StatusAccepted, rec.Code)
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -203,7 +201,7 @@ func TestServer_UnknownEndpoint(t *testing.T) {
 	lg := zaptest.NewLogger(t)
 	srv := New(10, WithLogger(lg))
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNotFound, rec.Code)

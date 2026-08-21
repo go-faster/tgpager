@@ -98,7 +98,7 @@ func TestFFmpegStreamerCancelled(t *testing.T) {
 		return nil
 	}, sineFile(t, "5"), WithLogger(zaptest.NewLogger(t)))
 
-	require.Error(t, err, "cancelling mid-stream must stop ffmpeg")
+	require.Error(t, err, "canceling mid-stream must stop ffmpeg")
 }
 
 type errStub string

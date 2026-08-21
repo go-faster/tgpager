@@ -7,6 +7,10 @@ import (
 	"github.com/go-faster/errors"
 	"github.com/gotd/td/telegram/calls"
 	"github.com/pion/rtp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -51,13 +55,23 @@ func (c *Call) waitConnected(ctx context.Context, timeout time.Duration) error {
 // Ring places a call to the configured peer and, once connected, invokes fn.
 // Unanswered, declined and dropped calls are retried.
 func (c *Client) Ring(ctx context.Context, fn func(ctx context.Context, call *Call) error) error {
-	return c.retry(ctx, func(ctx context.Context, lg *zap.Logger) error {
+	ctx, span := c.tracer.Start(ctx, "tgcall.Ring",
+		trace.WithAttributes(attribute.String("tgpager.peer", c.peer)),
+	)
+	defer span.End()
+
+	err := c.retry(ctx, func(ctx context.Context, lg *zap.Logger) error {
 		return c.ringOnce(ctx, lg, fn)
 	})
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
 }
 
 // retry runs attempt up to c.attempts times, pausing c.retryDelay between tries.
-// A cancelled ctx stops it immediately rather than burning the remaining attempts.
+// A canceled ctx stops it immediately rather than burning the remaining attempts.
 func (c *Client) retry(ctx context.Context, attempt func(context.Context, *zap.Logger) error) error {
 	var lastErr error
 	for n := 1; n <= c.attempts; n++ {
@@ -84,12 +98,25 @@ func (c *Client) retry(ctx context.Context, attempt func(context.Context, *zap.L
 	return errors.Wrapf(lastErr, "all %d call attempts failed", c.attempts)
 }
 
-func (c *Client) ringOnce(ctx context.Context, lg *zap.Logger, fn func(context.Context, *Call) error) error {
+func (c *Client) ringOnce(ctx context.Context, lg *zap.Logger, fn func(context.Context, *Call) error) (err error) {
+	ctx, span := c.tracer.Start(ctx, "tgcall.Attempt")
+	start := time.Now()
+	defer func() {
+		elapsed := time.Since(start).Seconds()
+		c.metrics.attempts.Add(ctx, 1, metric.WithAttributes(outcome(err)))
+		c.metrics.duration.Record(ctx, elapsed, metric.WithAttributes(outcome(err)))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
 	call, err := c.placeCall(ctx, lg)
 	if err != nil {
 		return err
 	}
-	// Cleanup must outlive a cancelled ctx, otherwise the call stays up.
+	// Cleanup must outlive a canceled ctx, otherwise the call stays up.
 	defer func() {
 		if err := c.hangup(context.WithoutCancel(ctx)); err != nil {
 			lg.Error("Hangup failed", zap.Error(err))
@@ -100,6 +127,7 @@ func (c *Client) ringOnce(ctx context.Context, lg *zap.Logger, fn func(context.C
 		return err
 	}
 	lg.Info("Call connected")
+	span.AddEvent("connected")
 
 	return fn(ctx, call)
 }
@@ -112,6 +140,9 @@ func (c *Client) placeCall(ctx context.Context, lg *zap.Logger) (*Call, error) {
 
 	lg = lg.With(zap.String("peer", c.peer))
 	lg.Info("Requesting call", zap.Duration("ring_timeout", c.ringTimeout))
+
+	ctx, span := c.tracer.Start(ctx, "tgcall.PlaceCall")
+	defer span.End()
 
 	// calls.Request blocks until the callee accepts, so the ring timeout
 	// bounds how long we let it keep ringing.

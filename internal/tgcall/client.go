@@ -10,6 +10,10 @@ import (
 	"github.com/gotd/td/telegram/calls"
 	"github.com/gotd/td/telegram/peers"
 	"github.com/gotd/td/tg"
+	"go.opentelemetry.io/otel/metric"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/zap"
 )
 
@@ -33,6 +37,11 @@ type Client struct {
 	peer        string
 	peerUser    tg.InputUserClass
 	peerStorage peers.Storage
+
+	tracerProvider trace.TracerProvider
+	meterProvider  metric.MeterProvider
+	tracer         trace.Tracer
+	metrics        *metrics
 
 	ringTimeout    time.Duration
 	connectTimeout time.Duration
@@ -94,15 +103,30 @@ func New(appID int, appHash, session string, opts ...Option) *Client {
 	if c.attempts < 1 {
 		c.attempts = 1
 	}
+	if c.tracerProvider == nil {
+		c.tracerProvider = noop.NewTracerProvider()
+	}
+	if c.meterProvider == nil {
+		c.meterProvider = metricnoop.NewMeterProvider()
+	}
+	c.tracer = c.tracerProvider.Tracer(InstrumentationName)
 	return c
 }
 
-func (c *Client) init() {
+func (c *Client) init() error {
 	dispatcher := tg.NewUpdateDispatcher()
+	m, err := newMetrics(c.meterProvider)
+	if err != nil {
+		return errors.Wrap(err, "create metrics")
+	}
+	c.metrics = m
+
+	// gotd instruments its own MTProto invocations when given a provider.
 	c.client = telegram.NewClient(c.appID, c.appHash, telegram.Options{
 		SessionStorage: &telegram.FileSessionStorage{Path: c.session},
 		Logger:         zapToGotdLog(c.lg),
 		UpdateHandler:  dispatcher,
+		TracerProvider: c.tracerProvider,
 	})
 	c.api = c.client.API()
 	c.calls = calls.NewClient(c.api, calls.Options{
@@ -113,10 +137,13 @@ func (c *Client) init() {
 		Storage: c.peerStorage,
 		Logger:  zapToGotdLog(c.lg.Named("peers")),
 	}.Build(c.api)
+	return nil
 }
 
 func (c *Client) Run(ctx context.Context, f func(ctx context.Context) error) error {
-	c.init()
+	if err := c.init(); err != nil {
+		return err
+	}
 	return c.client.Run(ctx, func(ctx context.Context) error {
 		if err := c.authenticate(ctx); err != nil {
 			return err
@@ -130,7 +157,9 @@ func (c *Client) Run(ctx context.Context, f func(ctx context.Context) error) err
 
 // AuthFlow runs interactive authentication and exits, populating the session file.
 func (c *Client) AuthFlow(ctx context.Context) error {
-	c.init()
+	if err := c.init(); err != nil {
+		return err
+	}
 	return c.client.Run(ctx, c.authenticate)
 }
 

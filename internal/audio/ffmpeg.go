@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/rand/v2"
 	"net"
 	"os/exec"
 	"strings"
@@ -50,8 +50,8 @@ func (f *FFmpegStreamer) Stream(ctx context.Context, write func(*rtp.Packet) err
 	defer func() { _ = conn.Close() }()
 
 	local := conn.LocalAddr().(*net.UDPAddr)
-	rng := rand.New(rand.NewSource(rand.Int63()))
-	ssrc := rng.Uint32()
+	// #nosec G404 -- an RTP SSRC is a stream identifier, not a secret.
+	ssrc := rand.Uint32()
 
 	args := []string{
 		"-re",
@@ -69,6 +69,7 @@ func (f *FFmpegStreamer) Stream(ctx context.Context, write func(*rtp.Packet) err
 
 	lg.Debug("Starting ffmpeg", zap.String("path", f.ffmpegPath), zap.Strings("args", args))
 
+	// #nosec G204 -- ffmpeg path and the input file are operator-supplied config.
 	cmd := exec.CommandContext(ctx, f.ffmpegPath, args...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {

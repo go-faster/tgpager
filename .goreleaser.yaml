@@ -1,0 +1,84 @@
+version: 2
+project_name: tgpager
+
+builds:
+  - id: tgpager
+    main: ./cmd/tgpager
+    binary: tgpager
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [linux]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    builds_info:
+      group: root
+      owner: root
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+nfpms:
+  - id: tgpager
+    package_name: tgpager
+    ids: [tgpager]
+    homepage: https://github.com/go-faster/tgpager
+    maintainer: tdakkota <tgpager@tdakkota.dev>
+    description: |
+      Alertmanager webhook that pages on-call by placing a Telegram call
+      and playing an audio file into it.
+    license: AGPL-3.0
+    formats: [deb, rpm]
+    deb:
+      lintian_overrides:
+        - statically-linked-binary
+        - changelog-file-missing-in-native-package
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^chore:"
+      - "^test:"
+
+dockers_v2:
+  - id: tgpager
+    ids: [tgpager]
+    images:
+      - "ghcr.io/go-faster/tgpager"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - "{{ .Version }}"
+      - "latest"
+    dockerfile: deploy/Dockerfile.goreleaser
+    # Registry-backed buildx cache: unlike GitHub Actions' cache it is not
+    # scoped to a ref, so it survives across releases.
+    flags:
+      - "--cache-from=type=registry,ref=ghcr.io/go-faster/tgpager:buildcache"
+      - "--cache-to=type=registry,ref=ghcr.io/go-faster/tgpager:buildcache,mode=max"
+
+release:
+  github:
+    owner: go-faster
+    name: tgpager
+  mode: replace
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Docker image
+
+    ```
+    ghcr.io/go-faster/tgpager:{{ .Version }}
+    ```
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"

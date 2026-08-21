@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1
+FROM alpine:3.21
+
+ARG TARGETPLATFORM
+
+# ffmpeg encodes the alert audio to Opus RTP, so it must be in the image.
+RUN apk add --no-cache ca-certificates tzdata ffmpeg \
+    && addgroup -S tgpager \
+    && adduser -S tgpager -G tgpager -h /home/tgpager
+
+WORKDIR /home/tgpager
+
+# dockers_v2 places the target platform's artifacts under $TARGETPLATFORM/
+COPY ${TARGETPLATFORM}/tgpager /usr/local/bin/tgpager
+
+USER tgpager
+
+ENTRYPOINT ["tgpager"]

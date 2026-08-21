@@ -1,3 +1,15 @@
-tone.ogg
-*.bolt
+# Build output
+/dist/
+/tgpager
+
+# Runtime state: session is a credential, caches are per-account
 session.json
+*.bolt
+
+# Local audio
+tone.ogg
+*.ogg
+
+# Editors
+.idea/
+.vscode/

@@ -12,7 +12,7 @@ import (
 )
 
 // TestWebhookToCallEndToEnd runs the real HTTP server and asserts an
-// Alertmanager POST reaches the call queue, including the dedup behaviour.
+// Alertmanager POST reaches the call queue, including the dedup behavior.
 func TestWebhookToCallEndToEnd(t *testing.T) {
 	srv := New(10, WithLogger(zaptest.NewLogger(t)), WithToken("tok"))
 	ts := httptest.NewServer(srv)

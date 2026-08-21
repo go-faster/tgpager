@@ -1,3 +1,4 @@
+// Package server serves the Alertmanager webhook.
 package server
 
 import (
@@ -6,8 +7,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/go-faster/tgpager/internal/alertmanager"
+	"go.opentelemetry.io/otel/metric"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/zap"
+
+	"github.com/go-faster/tgpager/internal/alertmanager"
 )
 
 type CallRequest struct {
@@ -19,12 +23,14 @@ type CallRequest struct {
 const maxBodySize = 1 << 20
 
 type Server struct {
-	lg       *zap.Logger
-	token    string
-	queue    chan CallRequest
-	mu       sync.Mutex
-	inflight map[string]struct{}
-	handler  http.Handler
+	lg            *zap.Logger
+	token         string
+	meterProvider metric.MeterProvider
+	metrics       *metrics
+	queue         chan CallRequest
+	mu            sync.Mutex
+	inflight      map[string]struct{}
+	handler       http.Handler
 }
 
 type Option func(*Server)
@@ -54,6 +60,16 @@ func New(queueSize int, opts ...Option) *Server {
 	if s.token == "" {
 		s.lg.Warn("Webhook is unauthenticated, anyone who can reach it can place calls")
 	}
+	if s.meterProvider == nil {
+		s.meterProvider = metricnoop.NewMeterProvider()
+	}
+	// Counters only fail on a bad instrument name, which is a programming
+	// error rather than anything a running server can recover from.
+	m, err := newMetrics(s.meterProvider)
+	if err != nil {
+		panic(err)
+	}
+	s.metrics = m
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /alertmanager", s.handleAlertmanager)
 	s.handler = mux
@@ -110,6 +126,7 @@ func (s *Server) handleAlertmanager(w http.ResponseWriter, r *http.Request) {
 	lg := s.lg.With(zap.String("remote", r.RemoteAddr))
 
 	if !s.authorized(r) {
+		s.metrics.webhooks.Add(r.Context(), 1, resultAttr("unauthorized"))
 		lg.Warn("Rejected unauthorized webhook")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -117,6 +134,7 @@ func (s *Server) handleAlertmanager(w http.ResponseWriter, r *http.Request) {
 
 	payload, err := alertmanager.DecodeReader(http.MaxBytesReader(w, r.Body, maxBodySize))
 	if err != nil {
+		s.metrics.webhooks.Add(r.Context(), 1, resultAttr("malformed"))
 		lg.Warn("Failed to decode alertmanager payload", zap.Error(err))
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
@@ -129,12 +147,14 @@ func (s *Server) handleAlertmanager(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err := payload.Validate(); err != nil {
+		s.metrics.webhooks.Add(r.Context(), 1, resultAttr("invalid"))
 		lg.Warn("Invalid alertmanager payload", zap.Error(err))
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
 	if !payload.IsFiring() {
+		s.metrics.webhooks.Add(r.Context(), 1, resultAttr("not_firing"))
 		lg.Debug("Skipping non-firing alert")
 		w.WriteHeader(http.StatusAccepted)
 		return
@@ -144,7 +164,11 @@ func (s *Server) handleAlertmanager(w http.ResponseWriter, r *http.Request) {
 		GroupKey: payload.GroupKey,
 	}
 	if !s.enqueue(req) {
+		s.metrics.webhooks.Add(r.Context(), 1, resultAttr("duplicate"))
 		lg.Info("Dropping duplicate/inflight call", zap.String("groupKey", req.GroupKey))
+	} else {
+		s.metrics.webhooks.Add(r.Context(), 1, resultAttr("queued"))
+		s.metrics.queued.Add(r.Context(), 1)
 	}
 
 	w.WriteHeader(http.StatusAccepted)

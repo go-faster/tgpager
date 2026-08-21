@@ -12,12 +12,14 @@ import (
 
 	"github.com/go-faster/errors"
 	"github.com/go-faster/sdk/app"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/go-faster/tgpager/internal/audio"
 	"github.com/go-faster/tgpager/internal/peercache"
 	"github.com/go-faster/tgpager/internal/server"
 	"github.com/go-faster/tgpager/internal/tgcall"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 func main() {
@@ -123,6 +125,8 @@ func main() {
 
 		callClient := tgcall.New(appID, appHash, sessionFile,
 			tgcall.WithLogger(lg),
+			tgcall.WithTracerProvider(t.TracerProvider()),
+			tgcall.WithMeterProvider(t.MeterProvider()),
 			tgcall.WithPeer(peer),
 			tgcall.WithPeerStorage(peerStorage),
 			tgcall.WithRingTimeout(ringTimeout),
@@ -130,7 +134,11 @@ func main() {
 			tgcall.WithRetry(attempts, retryDelay),
 		)
 
-		srv := server.New(100, server.WithLogger(lg), server.WithToken(token))
+		srv := server.New(100,
+			server.WithLogger(lg),
+			server.WithToken(token),
+			server.WithMeterProvider(t.MeterProvider()),
+		)
 
 		httpServer := &http.Server{
 			Addr:              addr,
@@ -143,35 +151,44 @@ func main() {
 
 		streamer := audio.NewFFmpeg()
 
-		go func() {
-			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				lg.Fatal("HTTP server failed", zap.Error(err))
-			}
-		}()
+		g, ctx := errgroup.WithContext(ctx)
 
-		go func() {
-			<-ctx.Done()
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer shutdownCancel()
-			if err := httpServer.Shutdown(shutdownCtx); err != nil {
-				lg.Error("HTTP server shutdown error", zap.Error(err))
+		g.Go(func() error {
+			lg.Info("Serving webhooks", zap.String("addr", addr))
+			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return errors.Wrap(err, "serve http")
 			}
-		}()
-
-		return callClient.Run(ctx, func(ctx context.Context) error {
-			lg.Info("Telegram client ready")
-
-			for {
-				select {
-				case <-ctx.Done():
-					return nil
-				case req := <-srv.Queue():
-					lg.Info("Processing call request", zap.String("groupKey", req.GroupKey))
-					processCall(ctx, lg, callClient, streamer, audioFile, req)
-					srv.Done(req.GroupKey)
-				}
-			}
+			return nil
 		})
+
+		g.Go(func() error {
+			<-ctx.Done()
+			// Shutdown needs a live context, the group's is already canceled.
+			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			if err := httpServer.Shutdown(shutdownCtx); err != nil {
+				return errors.Wrap(err, "shutdown http")
+			}
+			return nil
+		})
+
+		g.Go(func() error {
+			return callClient.Run(ctx, func(ctx context.Context) error {
+				lg.Info("Telegram client ready")
+
+				for {
+					select {
+					case <-ctx.Done():
+						return nil
+					case req := <-srv.Queue():
+						processCall(ctx, lg, callClient, streamer, audioFile, req)
+						srv.Done(req.GroupKey)
+					}
+				}
+			})
+		})
+
+		return g.Wait()
 	}, app.WithZapConfig(cfg))
 }
 

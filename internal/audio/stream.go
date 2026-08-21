@@ -1,3 +1,4 @@
+// Package audio encodes an audio file into Opus RTP packets.
 package audio
 
 import (
