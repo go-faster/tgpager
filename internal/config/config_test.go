@@ -244,3 +244,17 @@ func TestVoiceModeRejectsUnknown(t *testing.T) {
 	_, _, err := Load(writeYAML(t, minimalConfig+"voice:\n  mode: shout\n"))
 	require.Error(t, err)
 }
+
+// TestExampleConfigLoads keeps the shipped example from drifting away from the
+// descriptor, which is the failure a reader hits first.
+func TestExampleConfigLoads(t *testing.T) {
+	cfg, _, err := Load(filepath.Join("..", "..", "tgpager.example.yml"))
+	require.NoError(t, err)
+
+	require.Equal(t, "@oncall", cfg.Peer)
+	require.Equal(t, VoiceFallback, cfg.Voice.Mode)
+
+	tts, ok := cfg.TTS.Value()
+	require.True(t, ok, "example must exercise the tts section")
+	require.NotNil(t, tts.Provider.OpenAI)
+}

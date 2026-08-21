@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/go-faster/tgpager/main/config.schema.json
+
+# Every setting may also be given as an environment variable, which wins.
+# See CONFIG.md for the full reference. Commented-out values are the defaults.
+
+telegram:
+  app_id: 123456
+  # Secret: prefer TGPAGER_TELEGRAM_APP_HASH over writing it here.
+  app_hash: "0123456789abcdef0123456789abcdef"
+  # session: session.json
+
+# Who gets paged. A username, phone, t.me link, or id:<user-id>[:<access-hash>].
+peer: "@oncall"
+
+# Played into the call, and the tone before speech. Also what a page falls
+# back to when synthesis fails.
+audio: alert.ogg
+
+webhook:
+  # addr: ":8080"
+  # Secret: prefer TGPAGER_WEBHOOK_TOKEN.
+  token: "change-me"
+  # queue_size: 100
+
+# call:
+#   ring_timeout: 45s      # how long an unanswered call keeps ringing
+#   connect_timeout: 30s
+#   attempts: 3
+#   retry_delay: 10s
+
+# Speech. Omit the whole section to page with the audio file alone.
+tts:
+  provider:
+    type: openai           # OpenAI, OpenRouter, Azure, or a local compatible server
+    base_url: https://api.openai.com/v1
+    # Secret: prefer TGPAGER_TTS_PROVIDER_API_KEY.
+    api_key: "sk-..."
+    model: gpt-4o-mini-tts
+    voice: alloy
+    instructions: Speak urgently and clearly.
+    # dialect: openai      # openrouter nests instructions differently
+    # format: mp3
+  # What gets spoken. Alert labels are attacker-influenceable, so keep it short.
+  template: |
+    {{ .Status }} alert. {{ .CommonLabels.alertname }}.
+    Severity {{ .CommonLabels.severity }}. {{ .CommonAnnotations.summary }}
+  # repeat: 3              # tone and speech, so a groggy callee gets a second chance
+  # timeout: 10s
+  # cache:
+  #   dir: tts-cache
+  #   ttl: 720h            # 30 days, by last use rather than by creation
+  #   max_bytes: 268435456 # 256 MiB
+
+# Leave the page in the chat as a voice message. A call records nothing when
+# it is missed; this survives, and can be forwarded.
+voice:
+  # off | fallback | always | only
+  #   fallback  send only after every call attempt failed
+  #   always    send on every page, answered or not
+  #   only      send instead of calling, for alerts that must not ring anybody
+  mode: fallback
+  # timeout: 1m
+  # attempts: 3
+  # retry_delay: 2s        # a FLOOD_WAIT from Telegram wins when it asks longer
+
+# peer_cache: peers.bolt
+# debug: false

@@ -29,7 +29,8 @@ tgpager -login                    # once, interactive
 tgpager -config tgpager.yml
 ```
 
-Every setting is documented in [CONFIG.md](CONFIG.md) and may be given in YAML
+[tgpager.example.yml](tgpager.example.yml) is a complete annotated config,
+kept loadable by a test. Every setting is documented in [CONFIG.md](CONFIG.md) and may be given in YAML
 or as an environment variable, which wins. [config.schema.json](config.schema.json)
 gives editors completion and validation:
 
