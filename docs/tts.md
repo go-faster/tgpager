@@ -200,6 +200,29 @@ Notably, TTS failure does **not** consume a call attempt. Retries exist for
 unanswered calls; burning them on a hard-down provider could mean never paging
 at all.
 
+## Preflight
+
+Synthesis is exercised once at startup, so a broken provider shows up while
+deploying and a lazily loaded model is warm before the first page needs it.
+It retries a few times: on a server that loads weights on demand, the first
+request is what triggers the load and may not be answered within the timeout,
+while the next lands on a warm model.
+
+**Preflight never blocks serving.** A failure is a warning, and the pager comes
+up degraded. Refusing to start would close a loop worth spelling out:
+
+1. something breaks
+2. the alert fires
+3. the pager cannot reach its speech provider, because that broke too
+4. the pager refuses to start
+5. nobody is told about any of it
+
+A pager that will not start is worse than one that only plays a tone. The
+outage that broke the provider is exactly what still needs paging about.
+
+For a deploy pipeline that does want to fail early, `tgpager -check` runs the
+same path and exits non-zero, without ever being on the serving path.
+
 ## Observability
 
 Span `tts.Synthesize` with provider, model, cache hit and byte count. Counters

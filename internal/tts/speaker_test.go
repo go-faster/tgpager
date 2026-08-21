@@ -131,3 +131,70 @@ func TestNewSpeakerRequiresToneAndCache(t *testing.T) {
 	_, err = NewSpeaker(SpeakerOptions{Synthesizer: &fakeSynth{}, Tone: "t.ogg"})
 	require.Error(t, err, "a provider without a cache would re-bill every resend")
 }
+
+func TestPreflightWarmsUp(t *testing.T) {
+	// Fails the first call, as a lazily loading model server does, then answers.
+	synth := &warmingSynth{failFor: 1, audio: Audio{Data: []byte("x"), Format: "mp3"}}
+	s := newSpeaker(t, synth)
+
+	require.NoError(t, s.Preflight(t.Context()), "must retry past the cold start")
+	require.Equal(t, 2, synth.calls)
+}
+
+func TestPreflightGivesUp(t *testing.T) {
+	synth := &warmingSynth{failFor: 99}
+	s := newSpeaker(t, synth)
+
+	err := s.Preflight(t.Context())
+	require.Error(t, err)
+	require.Equal(t, PreflightAttempts, synth.calls, "bounded, not a spin")
+}
+
+func TestPreflightDisabledIsNoop(t *testing.T) {
+	s, err := NewSpeaker(SpeakerOptions{Tone: "tone.ogg"})
+	require.NoError(t, err)
+	require.NoError(t, s.Preflight(t.Context()), "nothing to check without a provider")
+}
+
+func TestPreflightStopsOnCancel(t *testing.T) {
+	synth := &warmingSynth{failFor: 99}
+	s := newSpeaker(t, synth)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	require.Error(t, s.Preflight(ctx))
+	require.Less(t, synth.calls, PreflightAttempts, "a canceled context must not burn attempts")
+}
+
+// TestPreflightFailureStillPages is the guarantee that matters: a provider that
+// never warmed up must not stop a page from happening.
+func TestPreflightFailureStillPages(t *testing.T) {
+	s := newSpeaker(t, &warmingSynth{failFor: 99})
+
+	require.Error(t, s.Preflight(t.Context()))
+
+	spec := s.Speak(t.Context(), testPayload())
+	require.Equal(t, []string{"tone.ogg"}, spec.Segments)
+	require.NoError(t, spec.Validate())
+}
+
+type warmingSynth struct {
+	failFor int
+	calls   int
+	audio   Audio
+}
+
+func (w *warmingSynth) Synthesize(ctx context.Context, _ string) (Audio, error) {
+	w.calls++
+	if ctx.Err() != nil {
+		return Audio{}, ctx.Err()
+	}
+	if w.calls <= w.failFor {
+		return Audio{}, errors.New("model is still loading")
+	}
+	return w.audio, nil
+}
+
+func (w *warmingSynth) Fingerprint() string { return "warming" }
+func (w *warmingSynth) Format() string      { return "mp3" }

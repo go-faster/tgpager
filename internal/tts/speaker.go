@@ -181,3 +181,56 @@ func (s *Speaker) speech(ctx context.Context, payload alertmanager.WebhookPayloa
 	s.requests.Add(ctx, 1, metric.WithAttributes(attribute.String("result", "miss")))
 	return path, nil
 }
+
+// PreflightAttempts is how many times [Speaker.Preflight] tries.
+//
+// More than one on purpose: a model server that loads weights lazily is
+// triggered by the first request and may not answer it within the timeout,
+// while the next one lands on a warm model.
+const PreflightAttempts = 3
+
+// PreflightPayload is a synthetic alert that exercises the speech path.
+func PreflightPayload() alertmanager.WebhookPayload {
+	return alertmanager.WebhookPayload{
+		Version:  "4",
+		GroupKey: "tgpager-preflight",
+		Status:   "firing",
+		CommonLabels: map[string]string{
+			"alertname": "PreflightCheck",
+			"severity":  "warning",
+		},
+		CommonAnnotations: map[string]string{
+			"summary": "tgpager is starting up",
+		},
+	}
+}
+
+// Preflight synthesizes once at startup, so a broken provider is discovered
+// while deploying rather than during the first page, and a lazily loaded model
+// is warm before it is needed.
+//
+// It is a no-op when no provider is configured.
+func (s *Speaker) Preflight(ctx context.Context) error {
+	if _, disabled := s.synth.(Disabled); disabled {
+		return nil
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= PreflightAttempts; attempt++ {
+		_, err := s.speech(ctx, PreflightPayload())
+		if err == nil {
+			if attempt > 1 {
+				s.lg.Info("Speech provider answered after warming up",
+					zap.Int("attempts", attempt))
+			}
+			return nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			return errors.Wrap(ctx.Err(), "preflight")
+		}
+		s.lg.Debug("Preflight attempt failed",
+			zap.Int("attempt", attempt), zap.Error(lastErr))
+	}
+	return errors.Wrapf(lastErr, "preflight failed after %d attempts", PreflightAttempts)
+}

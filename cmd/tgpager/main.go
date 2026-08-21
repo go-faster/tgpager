@@ -27,9 +27,11 @@ func main() {
 	var (
 		configPath string
 		login      bool
+		check      bool
 	)
 	flag.StringVar(&configPath, "config", "tgpager.yml", "Path to the configuration file")
 	flag.BoolVar(&login, "login", false, "Authenticate interactively, write the session file and exit")
+	flag.BoolVar(&check, "check", false, "Verify configuration and the speech provider, then exit")
 	flag.Parse()
 
 	cfg, _, err := config.Load(configPath)
@@ -51,6 +53,15 @@ func main() {
 	if _, err := os.Stat(cfg.Audio); err != nil {
 		fmt.Fprintf(os.Stderr, "audio file: %v\n", err)
 		os.Exit(1)
+	}
+
+	if check {
+		if err := runCheck(cfg); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, "Configuration and speech provider are healthy")
+		return
 	}
 
 	zapCfg := zap.NewProductionConfig()
@@ -116,6 +127,18 @@ func run(ctx context.Context, lg *zap.Logger, t *app.Telemetry, cfg config.Confi
 
 	g, ctx := errgroup.WithContext(ctx)
 
+	// Warming runs alongside serving, never before it. A provider that is down
+	// must not keep the pager from starting: the outage that broke it is
+	// exactly what still needs paging about.
+	g.Go(func() error {
+		if err := speaker.Preflight(ctx); err != nil {
+			lg.Warn("Speech provider is unhealthy, pages will play the tone alone",
+				zap.Error(err))
+			return nil
+		}
+		return nil
+	})
+
 	g.Go(func() error {
 		lg.Info("Serving webhooks", zap.String("addr", cfg.Webhook.Addr))
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -152,6 +175,27 @@ func run(ctx context.Context, lg *zap.Logger, t *app.Telemetry, cfg config.Confi
 	})
 
 	return g.Wait()
+}
+
+// runCheck exercises the speech path once and reports, for a deploy pipeline
+// that wants to fail before shipping rather than discover it at 3am.
+func runCheck(cfg config.Config) error {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	if _, err := os.Stat(cfg.Audio); err != nil {
+		return errors.Wrap(err, "audio file")
+	}
+
+	lg, err := zap.NewDevelopment()
+	if err != nil {
+		return err
+	}
+	speaker, err := tts.Build(cfg, tts.BuildOptions{Logger: lg, Tone: cfg.Audio})
+	if err != nil {
+		return errors.Wrap(err, "build speaker")
+	}
+	return speaker.Preflight(ctx)
 }
 
 // runLogin authenticates outside app.Run, so the terminal prompts are not

@@ -92,6 +92,12 @@ Synthesis happens before the call is placed, and its result is cached by
 content so a resent alert is not re-synthesized. **If it fails for any reason
 the page still happens**, playing `audio` alone.
 
+The provider is exercised once at startup, which warms a model server that
+loads weights lazily. A failure there is a warning, never a refusal to start —
+a pager that will not boot is worse than one that only plays a tone. To fail a
+deploy instead, run `tgpager -check`, which exits non-zero if the speech path
+is broken.
+
 ## Peer
 
 `-peer` accepts a username, phone, deeplink or raw ID:
