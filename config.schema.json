@@ -301,6 +301,45 @@
       ],
       "type": "object"
     },
+    "voice": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "default": 3,
+          "description": "How many times to try sending.",
+          "maximum": 100,
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mode": {
+          "default": "off",
+          "description": "When to leave the page in the chat as a voice message: never, only after every call attempt failed, on every page, or instead of calling.",
+          "enum": [
+            "off",
+            "fallback",
+            "always",
+            "only"
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeout": {
+          "default": "1m0s",
+          "description": "How long to spend rendering and uploading before giving up.",
+          "format": "duration",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "webhook": {
       "additionalProperties": false,
       "properties": {

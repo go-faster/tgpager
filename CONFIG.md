@@ -8,6 +8,7 @@
 | [`webhook`](#webhook) | object | yes |  |  | `webhook` |  |  |
 | [`call`](#call) | object | yes |  |  | `call` |  |  |
 | [`tts`](#tts) | object | no |  |  | `tts` |  |  |
+| [`voice`](#voice) | object | yes |  |  | `voice` |  |  |
 | `peer` | string | yes |  | non-empty | `peer` | `TGPAGER_PEER` | Call target: @username, phone, t.me link, or id:<user-id>[:<access-hash>]. |
 | `audio` | string | yes |  | non-empty | `audio` | `TGPAGER_AUDIO` | Audio file played into the call, and the tone before speech. |
 | `peer_cache` | string | no | `"peers.bolt"` | non-empty | `peer_cache` | `TGPAGER_PEER_CACHE` | Path to the peer access hash cache. Account-scoped. |
@@ -83,3 +84,11 @@ Selected by `type: command`.
 | `dir` | string | no | `"tts-cache"` | non-empty | `tts.cache.dir` | `TGPAGER_TTS_CACHE_DIR` | Directory holding synthesized audio, reused across resends. |
 | `ttl` | duration | no | `720h0m0s` | at least 0s | `tts.cache.ttl` | `TGPAGER_TTS_CACHE_TTL` | How long unused audio is kept. Zero keeps it forever. |
 | `max_bytes` | integer | no | `268435456` | at least 0 | `tts.cache.max_bytes` | `TGPAGER_TTS_CACHE_MAX_BYTES` | Size the cache is trimmed to, dropping least recently used audio. Zero is unbounded. |
+
+## voice
+
+| Name | Type | Required | Default | Values | Constraints | yaml | env | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mode` | string | no | `"off"` | `"off"`, `"fallback"`, `"always"`, `"only"` |  | `voice.mode` | `TGPAGER_VOICE_MODE` | When to leave the page in the chat as a voice message: never, only after every call attempt failed, on every page, or instead of calling. |
+| `timeout` | duration | no | `1m0s` |  | at least 1s | `voice.timeout` | `TGPAGER_VOICE_TIMEOUT` | How long to spend rendering and uploading before giving up. |
+| `attempts` | integer | no | `3` |  | at least 1, at most 100 | `voice.attempts` | `TGPAGER_VOICE_ATTEMPTS` | How many times to try sending. |
