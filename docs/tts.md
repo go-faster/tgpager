@@ -174,9 +174,20 @@ weights is the operator's to accept.
 Alertmanager resends a firing alert every `repeat_interval`, so an uncached
 provider is re-billed for identical text forever.
 
-Content-addressed on disk: `sha256(provider|model|voice|text)` →
-`cache/<key>.<format>`, bounded by an LRU count. Files rather than bbolt,
-because ffmpeg wants a path and the audio never needs to be in memory.
+Content-addressed on disk: `sha256(fingerprint|text)` → `cache/<key>.<format>`,
+where the fingerprint covers everything that changes how a line sounds — model,
+voice, instructions, speed. Files rather than bbolt, because ffmpeg wants a
+path and the audio never needs to be in memory.
+
+Entries expire (`ttl`, 30 days) and the cache is trimmed to a size
+(`max_bytes`, 256 MiB) by dropping least recently used audio. A lookup touches
+the file, so eviction is by last use rather than by creation: an alert that
+fires every week stays cached. Either limit set to zero disables it.
+
+No cache library: the whole policy is a directory listing and two comparisons,
+and a dependency would own the eviction semantics that matter here.
+Eviction runs after a store, which is the only moment the cache grows, and its
+failure is swallowed — a full disk is a reason to page, not to stop paging.
 
 ## Plumbing change
 

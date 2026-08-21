@@ -87,9 +87,17 @@ type TTSProvider struct {
 type TTS struct {
 	Provider TTSProvider
 	Template string
-	Cache    string
+	Cache    TTSCache
 	Repeat   int
 	Timeout  time.Duration
+}
+
+// TTSCache bounds the synthesized audio kept on disk. A pager runs for years
+// and every distinct alert sentence leaves a file behind.
+type TTSCache struct {
+	Dir      string
+	TTL      time.Duration
+	MaxBytes int64
 }
 
 // Config is the tgpager configuration.
@@ -191,6 +199,21 @@ var CommandTTSDescriptor = figureout.MustDerive(
 	},
 )
 
+// TTSCacheDescriptor describes [TTSCache].
+var TTSCacheDescriptor = figureout.MustDerive(
+	func(c *TTSCache, s *figureout.Schema[TTSCache]) {
+		figureout.Value(s, &c.Dir, "dir").
+			Doc("Directory holding synthesized audio, reused across resends.").
+			NonEmpty().ApplyDefault("tts-cache")
+		figureout.Value(s, &c.TTL, "ttl").
+			Doc("How long unused audio is kept. Zero keeps it forever.").
+			AtLeast(0).ApplyDefault(30 * 24 * time.Hour)
+		figureout.Value(s, &c.MaxBytes, "max_bytes").
+			Doc("Size the cache is trimmed to, dropping least recently used audio. Zero is unbounded.").
+			AtLeast(0).ApplyDefault(int64(256 << 20))
+	},
+)
+
 // TTSDescriptor describes [TTS].
 var TTSDescriptor = figureout.MustDerive(
 	func(c *TTS, s *figureout.Schema[TTS]) {
@@ -202,9 +225,7 @@ var TTSDescriptor = figureout.MustDerive(
 
 		figureout.Value(s, &c.Template, "template").
 			Doc("Go template rendered into the spoken sentence.")
-		figureout.Value(s, &c.Cache, "cache").
-			Doc("Directory holding synthesized audio, reused across resends.").
-			NonEmpty().ApplyDefault("tts-cache")
+		figureout.Object(s, &c.Cache, "cache", TTSCacheDescriptor)
 		figureout.Value(s, &c.Repeat, "repeat").
 			Doc("How many times to play tone and speech, so a groggy callee gets a second chance.").
 			InRange(1, 10).ApplyDefault(3)

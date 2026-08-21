@@ -11,6 +11,10 @@ import (
 	"time"
 
 	"github.com/go-faster/errors"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 // OpenAIOptions configures an OpenAI-compatible /audio/speech provider.
@@ -29,9 +33,10 @@ type OpenAIOptions struct {
 	// Speed multiplies playback, 0.25 to 4.0. Zero leaves it to the provider.
 	Speed float64
 	// Dialect selects where Instructions goes on the wire.
-	Dialect Dialect
-	Timeout time.Duration
-	Client  *http.Client
+	Dialect        Dialect
+	Timeout        time.Duration
+	Client         *http.Client
+	TracerProvider trace.TracerProvider
 }
 
 // Dialect names a wire variation between OpenAI-compatible endpoints.
@@ -58,8 +63,9 @@ const (
 
 // OpenAI is a Synthesizer backed by an OpenAI-compatible speech endpoint.
 type OpenAI struct {
-	opts OpenAIOptions
-	cl   *http.Client
+	opts   OpenAIOptions
+	cl     *http.Client
+	tracer trace.Tracer
 }
 
 var _ Synthesizer = (*OpenAI)(nil)
@@ -92,7 +98,14 @@ func NewOpenAI(opts OpenAIOptions) (*OpenAI, error) {
 	if cl == nil {
 		cl = &http.Client{}
 	}
-	return &OpenAI{opts: opts, cl: cl}, nil
+	if opts.TracerProvider == nil {
+		opts.TracerProvider = noop.NewTracerProvider()
+	}
+	return &OpenAI{
+		opts:   opts,
+		cl:     cl,
+		tracer: opts.TracerProvider.Tracer(InstrumentationName),
+	}, nil
 }
 
 // Fingerprint covers everything that changes how the audio sounds, so a
@@ -146,7 +159,25 @@ func (o *OpenAI) buildRequest(text string) speechRequest {
 	return req
 }
 
-func (o *OpenAI) Synthesize(ctx context.Context, text string) (Audio, error) {
+func (o *OpenAI) Synthesize(ctx context.Context, text string) (audio Audio, err error) {
+	// The text itself never reaches a span: alert labels carry hostnames and
+	// customer identifiers.
+	ctx, span := o.tracer.Start(ctx, "tts.openai.Synthesize", trace.WithAttributes(
+		attribute.String("tts.provider", "openai"),
+		attribute.String("tts.model", o.opts.Model),
+		attribute.String("tts.voice", o.opts.Voice),
+		attribute.String("tts.dialect", string(o.opts.Dialect)),
+		attribute.String("server.address", o.opts.BaseURL),
+		attribute.Int("tts.text_bytes", len(text)),
+	))
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
 	ctx, cancel := context.WithTimeout(ctx, o.opts.Timeout)
 	defer cancel()
 
@@ -170,6 +201,7 @@ func (o *OpenAI) Synthesize(ctx context.Context, text string) (Audio, error) {
 		return Audio{}, errors.Wrap(err, "synthesize")
 	}
 	defer func() { _ = resp.Body.Close() }()
+	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 
 	if resp.StatusCode != http.StatusOK {
 		// The error body is small and not the audio; it explains the failure.
@@ -183,7 +215,9 @@ func (o *OpenAI) Synthesize(ctx context.Context, text string) (Audio, error) {
 		return Audio{}, errors.Wrap(err, "read audio")
 	}
 
-	audio := Audio{Data: data, Format: o.opts.Format}
+	span.SetAttributes(attribute.Int("tts.audio_bytes", len(data)))
+
+	audio = Audio{Data: data, Format: o.opts.Format}
 	if err := audio.validate(); err != nil {
 		return Audio{}, err
 	}

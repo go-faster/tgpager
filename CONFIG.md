@@ -42,7 +42,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [`provider`](#ttsprovider-type-openai) | union | yes |  |  | `tts.provider` |  | Speech provider. Omit to page with the audio file alone. |
 | `template` | string | no |  |  | `tts.template` | `TGPAGER_TTS_TEMPLATE` | Go template rendered into the spoken sentence. |
-| `cache` | string | no | `"tts-cache"` | non-empty | `tts.cache` | `TGPAGER_TTS_CACHE` | Directory holding synthesized audio, reused across resends. |
+| [`cache`](#ttscache) | object | yes |  |  | `tts.cache` |  |  |
 | `repeat` | integer | no | `3` | at least 1, at most 10 | `tts.repeat` | `TGPAGER_TTS_REPEAT` | How many times to play tone and speech, so a groggy callee gets a second chance. |
 | `timeout` | duration | no | `10s` | at least 1s | `tts.timeout` | `TGPAGER_TTS_TIMEOUT` | How long to wait for synthesis before paging without speech. |
 
@@ -75,3 +75,11 @@ Selected by `type: command`.
 | `name` | string | yes |  |  | non-empty | `tts.provider.name` | `TGPAGER_TTS_PROVIDER_NAME` | Executable to run, for example piper. |
 | `args` | list of string | no |  |  |  | `tts.provider.args` | `TGPAGER_TTS_PROVIDER_ARGS` | Arguments. {{text}} is replaced by the text to speak, otherwise it is written to stdin; {{output}} is replaced by a temporary file to write, otherwise audio is read from stdout. |
 | `output_format` | string | no | `"wav"` |  | non-empty | `tts.provider.output_format` | `TGPAGER_TTS_PROVIDER_OUTPUT_FORMAT` | Audio format the command produces. |
+
+## tts.cache
+
+| Name | Type | Required | Default | Constraints | yaml | env | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `dir` | string | no | `"tts-cache"` | non-empty | `tts.cache.dir` | `TGPAGER_TTS_CACHE_DIR` | Directory holding synthesized audio, reused across resends. |
+| `ttl` | duration | no | `720h0m0s` | at least 0s | `tts.cache.ttl` | `TGPAGER_TTS_CACHE_TTL` | How long unused audio is kept. Zero keeps it forever. |
+| `max_bytes` | integer | no | `268435456` | at least 0 | `tts.cache.max_bytes` | `TGPAGER_TTS_CACHE_MAX_BYTES` | Size the cache is trimmed to, dropping least recently used audio. Zero is unbounded. |

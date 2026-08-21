@@ -10,6 +10,10 @@ import (
 	"time"
 
 	"github.com/go-faster/errors"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 // CommandOptions configures synthesis by running a local binary, such as
@@ -21,8 +25,9 @@ type CommandOptions struct {
 	Name string
 	Args []string
 	// Format of the audio the command produces.
-	Format  string
-	Timeout time.Duration
+	Format         string
+	Timeout        time.Duration
+	TracerProvider trace.TracerProvider
 }
 
 // Placeholders substituted in Args.
@@ -37,7 +42,8 @@ const (
 
 // Command is a Synthesizer backed by a local executable.
 type Command struct {
-	opts CommandOptions
+	opts   CommandOptions
+	tracer trace.Tracer
 }
 
 var _ Synthesizer = (*Command)(nil)
@@ -52,7 +58,13 @@ func NewCommand(opts CommandOptions) (*Command, error) {
 	if opts.Timeout <= 0 {
 		opts.Timeout = defaultTimeout
 	}
-	return &Command{opts: opts}, nil
+	if opts.TracerProvider == nil {
+		opts.TracerProvider = noop.NewTracerProvider()
+	}
+	return &Command{
+		opts:   opts,
+		tracer: opts.TracerProvider.Tracer(InstrumentationName),
+	}, nil
 }
 
 func (c *Command) Fingerprint() string {
@@ -61,11 +73,27 @@ func (c *Command) Fingerprint() string {
 
 func (c *Command) Format() string { return c.opts.Format }
 
-func (c *Command) Synthesize(ctx context.Context, text string) (Audio, error) {
+func (c *Command) Synthesize(ctx context.Context, text string) (audio Audio, err error) {
+	// Neither the text nor the arguments reach the span: arguments carry the
+	// text once {{text}} is substituted.
+	ctx, span := c.tracer.Start(ctx, "tts.command.Synthesize", trace.WithAttributes(
+		attribute.String("tts.provider", "command"),
+		attribute.String("tts.command", c.opts.Name),
+		attribute.Int("tts.text_bytes", len(text)),
+	))
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
 	ctx, cancel := context.WithTimeout(ctx, c.opts.Timeout)
 	defer cancel()
 
-	dir, err := os.MkdirTemp("", "tgpager-tts-")
+	var dir string
+	dir, err = os.MkdirTemp("", "tgpager-tts-")
 	if err != nil {
 		return Audio{}, errors.Wrap(err, "temp dir")
 	}
@@ -101,6 +129,11 @@ func (c *Command) Synthesize(ctx context.Context, text string) (Audio, error) {
 		cmd.Stdout = &stdout
 	}
 
+	span.SetAttributes(
+		attribute.Bool("tts.text_via_args", wantsText),
+		attribute.Bool("tts.output_via_file", wantsFile),
+	)
+
 	if err := cmd.Run(); err != nil {
 		if reason := lastLine(stderr.Bytes()); reason != "" {
 			return Audio{}, errors.Wrapf(err, "%s: %s", c.opts.Name, reason)
@@ -116,7 +149,9 @@ func (c *Command) Synthesize(ctx context.Context, text string) (Audio, error) {
 		}
 	}
 
-	audio := Audio{Data: data, Format: c.opts.Format}
+	span.SetAttributes(attribute.Int("tts.audio_bytes", len(data)))
+
+	audio = Audio{Data: data, Format: c.opts.Format}
 	if err := audio.validate(); err != nil {
 		return Audio{}, err
 	}

@@ -158,3 +158,40 @@ tts:
 `))
 	require.Error(t, err, "an unknown dialect would silently drop instructions")
 }
+
+func TestLoadTTSCacheDefaults(t *testing.T) {
+	cfg, _, err := Load(writeYAML(t, `
+telegram: {app_id: 1, app_hash: h}
+peer: "@x"
+audio: tone.ogg
+tts:
+  provider: {type: command, name: piper}
+`))
+	require.NoError(t, err)
+
+	tts, ok := cfg.TTS.Value()
+	require.True(t, ok)
+	require.Equal(t, "tts-cache", tts.Cache.Dir)
+	require.Equal(t, 30*24*time.Hour, tts.Cache.TTL, "the cache must not grow forever by default")
+	require.Equal(t, int64(256<<20), tts.Cache.MaxBytes)
+}
+
+func TestLoadTTSCacheUnbounded(t *testing.T) {
+	cfg, _, err := Load(writeYAML(t, `
+telegram: {app_id: 1, app_hash: h}
+peer: "@x"
+audio: tone.ogg
+tts:
+  provider: {type: command, name: piper}
+  cache:
+    dir: /var/cache/tgpager
+    ttl: 0s
+    max_bytes: 0
+`))
+	require.NoError(t, err)
+
+	tts, _ := cfg.TTS.Value()
+	require.Equal(t, "/var/cache/tgpager", tts.Cache.Dir)
+	require.Zero(t, tts.Cache.TTL, "zero must be expressible")
+	require.Zero(t, tts.Cache.MaxBytes)
+}

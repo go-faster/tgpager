@@ -3,7 +3,6 @@ package tts
 import (
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,12 +12,6 @@ import (
 // GPT-SoVITS, a Piper HTTP wrapper — reached through the command provider, with
 // no tgpager code specific to any of them.
 func TestCommandDrivesHTTPServer(t *testing.T) {
-	for _, bin := range []string{"sh", "curl"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s is not installed", bin)
-		}
-	}
-
 	var got string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.URL.Query().Get("text")
@@ -29,15 +22,7 @@ func TestCommandDrivesHTTPServer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, err := NewCommand(CommandOptions{
-		Name: "sh",
-		Args: []string{
-			"-c",
-			`exec curl -sf --get --data-urlencode "text=$1" "$2/voice" -o "$3"`,
-			"sh", TextPlaceholder, srv.URL, OutputPlaceholder,
-		},
-		Format: "wav",
-	})
+	c, err := NewCommand(helperOptions(t, "fetch", srv.URL, TextPlaceholder, OutputPlaceholder))
 	require.NoError(t, err)
 
 	audio, err := c.Synthesize(t.Context(), "Alert. Postgres replication lag.")
@@ -49,27 +34,18 @@ func TestCommandDrivesHTTPServer(t *testing.T) {
 	require.Greater(t, len(audio.Data), 1000)
 }
 
-// TestCommandHTTPServerDownStillFails confirms the failure surfaces as an
-// error, which is what Speaker turns into a fallback rather than a lost page.
+// TestCommandHTTPServerDown confirms the failure surfaces as an error, which
+// Speaker turns into a fallback rather than a lost page.
 func TestCommandHTTPServerDown(t *testing.T) {
-	for _, bin := range []string{"sh", "curl"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s is not installed", bin)
-		}
-	}
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
 
-	c, err := NewCommand(CommandOptions{
-		Name:   "sh",
-		Args:   []string{"-c", `exec curl -sf "$1/voice" -o "$2"`, "sh", srv.URL, OutputPlaceholder},
-		Format: "wav",
-	})
+	c, err := NewCommand(helperOptions(t, "fetch", srv.URL, TextPlaceholder, OutputPlaceholder))
 	require.NoError(t, err)
 
 	_, err = c.Synthesize(t.Context(), "text")
 	require.Error(t, err, "a 500 from the model server must not look like success")
+	require.Contains(t, err.Error(), "500", "the status must survive")
 }

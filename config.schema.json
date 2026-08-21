@@ -110,13 +110,37 @@
       "additionalProperties": false,
       "properties": {
         "cache": {
-          "default": "tts-cache",
-          "description": "Directory holding synthesized audio, reused across resends.",
-          "minLength": 1,
-          "type": [
-            "string",
-            "null"
-          ]
+          "additionalProperties": false,
+          "properties": {
+            "dir": {
+              "default": "tts-cache",
+              "description": "Directory holding synthesized audio, reused across resends.",
+              "minLength": 1,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "max_bytes": {
+              "default": 268435456,
+              "description": "Size the cache is trimmed to, dropping least recently used audio. Zero is unbounded.",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "ttl": {
+              "default": "720h0m0s",
+              "description": "How long unused audio is kept. Zero keeps it forever.",
+              "format": "duration",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
         },
         "provider": {
           "description": "Speech provider. Omit to page with the audio file alone.",

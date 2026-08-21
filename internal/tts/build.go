@@ -35,11 +35,15 @@ func Build(cfg config.Config, opts BuildOptions) (*Speaker, error) {
 		return NewSpeaker(speaker)
 	}
 
-	synth, err := newSynthesizer(ttsCfg)
+	synth, err := newSynthesizer(ttsCfg, opts.TracerProvider)
 	if err != nil {
 		return nil, err
 	}
-	cache, err := NewCache(ttsCfg.Cache)
+	cache, err := NewCacheWith(CacheOptions{
+		Dir:      ttsCfg.Cache.Dir,
+		TTL:      ttsCfg.Cache.TTL,
+		MaxBytes: ttsCfg.Cache.MaxBytes,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -55,27 +59,29 @@ func Build(cfg config.Config, opts BuildOptions) (*Speaker, error) {
 	return NewSpeaker(speaker)
 }
 
-func newSynthesizer(cfg config.TTS) (Synthesizer, error) {
+func newSynthesizer(cfg config.TTS, tp trace.TracerProvider) (Synthesizer, error) {
 	switch p := cfg.Provider; {
 	case p.OpenAI != nil:
 		speed, _ := p.OpenAI.Speed.Value()
 		return NewOpenAI(OpenAIOptions{
-			BaseURL:      p.OpenAI.BaseURL,
-			APIKey:       p.OpenAI.APIKey,
-			Model:        p.OpenAI.Model,
-			Voice:        p.OpenAI.Voice,
-			Format:       p.OpenAI.Format,
-			Instructions: p.OpenAI.Instructions,
-			Speed:        speed,
-			Dialect:      Dialect(p.OpenAI.Dialect),
-			Timeout:      cfg.Timeout,
+			BaseURL:        p.OpenAI.BaseURL,
+			APIKey:         p.OpenAI.APIKey,
+			Model:          p.OpenAI.Model,
+			Voice:          p.OpenAI.Voice,
+			Format:         p.OpenAI.Format,
+			Instructions:   p.OpenAI.Instructions,
+			Speed:          speed,
+			Dialect:        Dialect(p.OpenAI.Dialect),
+			Timeout:        cfg.Timeout,
+			TracerProvider: tp,
 		})
 	case p.Command != nil:
 		return NewCommand(CommandOptions{
-			Name:    p.Command.Name,
-			Args:    p.Command.Args,
-			Format:  p.Command.OutputFormat,
-			Timeout: cfg.Timeout,
+			Name:           p.Command.Name,
+			Args:           p.Command.Args,
+			Format:         p.Command.OutputFormat,
+			Timeout:        cfg.Timeout,
+			TracerProvider: tp,
 		})
 	default:
 		return nil, errors.New("tts is configured with no provider")
