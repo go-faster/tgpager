@@ -151,6 +151,30 @@ to a chat message. When speech is unavailable it carries the tone, because
 Sending never delays or consumes a call attempt, and outside `only` mode a
 failure to send is a warning: the call already happened.
 
+### Plain text
+
+A peer with Telegram Premium can forbid voice messages, which Telegram refuses
+with `VOICE_MESSAGES_FORBIDDEN`. Text has no such setting, so it is what still
+gets through:
+
+```yaml
+voice:
+  text: fallback    # off | fallback | always
+```
+
+| Mode | Behaviour |
+| --- | --- |
+| `off` | never send text |
+| `fallback` | send only when the voice message could not be delivered (default) |
+| `always` | send every time, alongside the voice message |
+
+The text is the same sentence the speech says. `always` is mostly a debugging
+aid: it shows what was rendered without having to listen to it. Text is only
+sent where a voice message would have been, so `voice.mode: off` sends neither.
+
+A refusal is not retried. It cannot succeed on the next attempt, and spending
+the retry budget on it only buries the reason under identical log lines.
+
 To try it without waiting for an alert or ringing anybody:
 
 ```console

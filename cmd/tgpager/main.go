@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/go-faster/tgpager/internal/alertmanager"
 	"github.com/go-faster/tgpager/internal/audio"
 	"github.com/go-faster/tgpager/internal/config"
 	"github.com/go-faster/tgpager/internal/peercache"
@@ -283,17 +284,59 @@ func processPage(
 	if !voice.Mode.Sends(callErr != nil) {
 		return
 	}
-	if err := sendVoice(ctx, lg, client, streamer, spec, voice); err != nil {
-		// Only in "only" mode is this the page itself failing; everywhere else
-		// a call has already been placed and this is the record of it.
-		if voice.Mode == config.VoiceOnly {
-			lg.Error("Failed to page", zap.Error(err))
-			return
-		}
-		lg.Warn("Failed to leave a voice message", zap.Error(err))
-		return
+
+	voiceErr := sendVoice(ctx, lg, client, streamer, spec, voice)
+	switch {
+	case voiceErr == nil:
+		lg.Info("Left a voice message")
+	case tgcall.VoiceForbidden(voiceErr):
+		// A decision by the callee, not a fault: they have Telegram Premium
+		// and have turned voice messages off. Nothing to fix here.
+		lg.Warn("Peer does not accept voice messages")
+	default:
+		lg.Warn("Failed to leave a voice message", zap.Error(voiceErr))
 	}
-	lg.Info("Left a voice message")
+
+	sentText := sendText(ctx, lg, client, speaker, voice, req.Payload, voiceErr != nil)
+
+	// Only in "only" mode is a failure here the page itself failing; everywhere
+	// else a call has already been placed and this is the record of it. Text
+	// counts: the page reached the chat, just not as audio.
+	if voice.Mode == config.VoiceOnly && voiceErr != nil && !sentText {
+		lg.Error("Failed to page", zap.Error(voiceErr))
+	}
+}
+
+// sendText delivers the alert as plain text, and reports whether it did. It is
+// the fallback for a peer whose privacy settings forbid voice messages, and a
+// debugging aid when set to send every time.
+func sendText(
+	ctx context.Context,
+	lg *zap.Logger,
+	client *tgcall.Client,
+	speaker *tts.Speaker,
+	voice config.Voice,
+	payload alertmanager.WebhookPayload,
+	voiceFailed bool,
+) bool {
+	if !voice.Text.Sends(voiceFailed) {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, voice.Timeout)
+	defer cancel()
+
+	text, err := speaker.Text(payload)
+	if err != nil {
+		lg.Error("Failed to render the alert text", zap.Error(err))
+		return false
+	}
+	if err := client.SendText(ctx, text); err != nil {
+		lg.Warn("Failed to send a text message", zap.Error(err))
+		return false
+	}
+	lg.Info("Sent a text message")
+	return true
 }
 
 func placeCall(ctx context.Context, lg *zap.Logger, client *tgcall.Client, streamer *audio.FFmpegStreamer, spec audio.Spec) error {

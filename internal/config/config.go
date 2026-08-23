@@ -139,10 +139,43 @@ func (m VoiceMode) Sends(callFailed bool) bool {
 	}
 }
 
+// TextMode decides whether the alert text accompanies the voice message.
+type TextMode string
+
+// Text modes.
+const (
+	// TextOff never sends the text.
+	TextOff TextMode = "off"
+	// TextFallback sends it only when the voice message could not be
+	// delivered, which is what happens when the peer's privacy settings
+	// forbid voice messages.
+	TextFallback TextMode = "fallback"
+	// TextAlways sends it alongside every voice message.
+	TextAlways TextMode = "always"
+)
+
+// AllValues implements [figureout.EnumValuer].
+func (TextMode) AllValues() iter.Seq[TextMode] {
+	return slices.Values([]TextMode{TextOff, TextFallback, TextAlways})
+}
+
+// Sends reports whether to send the text, given how the voice message went.
+func (m TextMode) Sends(voiceFailed bool) bool {
+	switch m {
+	case TextAlways:
+		return true
+	case TextFallback:
+		return voiceFailed
+	default:
+		return false
+	}
+}
+
 // Voice leaves the page in the chat as a voice message. A call is ephemeral:
 // missed, it records nothing.
 type Voice struct {
 	Mode       VoiceMode
+	Text       TextMode
 	Timeout    time.Duration
 	Attempts   int
 	RetryDelay time.Duration
@@ -295,6 +328,12 @@ var VoiceDescriptor = figureout.MustDerive(
 				"never, only after every call attempt failed, on every page, " +
 				"or instead of calling.").
 			ApplyDefault(VoiceOff)
+		figureout.Enum(s, &c.Text, "text").
+			Doc("When to also send the alert as a plain text message: " +
+				"never, only when the voice message could not be delivered, " +
+				"or every time. Text needs no privacy permission, so the " +
+				"fallback still records a page the peer forbids voice for.").
+			ApplyDefault(TextFallback)
 		figureout.Value(s, &c.Timeout, "timeout").
 			Doc("How long to spend rendering and uploading before giving up.").
 			AtLeast(time.Second).ApplyDefault(60 * time.Second)

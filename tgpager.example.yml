@@ -66,6 +66,12 @@ voice:
   #   always    send on every page, answered or not
   #   only      send instead of calling, for alerts that must not ring anybody
   mode: fallback
+  # Also send the alert as plain text. A peer with Telegram Premium can forbid
+  # voice messages outright, and text is what still reaches them.
+  # off | fallback | always
+  #   fallback  send only when the voice message could not be delivered
+  #   always    send every time, which is mostly useful for debugging
+  # text: fallback
   # timeout: 1m
   # attempts: 3
   # retry_delay: 2s        # a FLOOD_WAIT from Telegram wins when it asks longer

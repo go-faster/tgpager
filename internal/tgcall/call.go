@@ -94,6 +94,9 @@ func (c *Client) retry(ctx context.Context, attempts int, delay time.Duration, a
 		if ctx.Err() != nil {
 			return err
 		}
+		if permanent(err) {
+			return err
+		}
 		lg.Warn("Attempt failed", zap.Error(err))
 		lastErr = err
 		wait = retryWait(err, delay, lg)

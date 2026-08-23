@@ -214,6 +214,24 @@ func TestVoiceMode(t *testing.T) {
 	}
 }
 
+func TestTextMode(t *testing.T) {
+	tests := []struct {
+		mode            TextMode
+		sendsOnDelivery bool
+		sendsOnFailure  bool
+	}{
+		{TextOff, false, false},
+		{TextFallback, false, true},
+		{TextAlways, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.mode), func(t *testing.T) {
+			require.Equal(t, tt.sendsOnDelivery, tt.mode.Sends(false))
+			require.Equal(t, tt.sendsOnFailure, tt.mode.Sends(true))
+		})
+	}
+}
+
 const minimalConfig = `
 telegram:
   app_id: 1
@@ -229,6 +247,19 @@ func TestVoiceDefaults(t *testing.T) {
 	require.Equal(t, 60*time.Second, cfg.Voice.Timeout)
 	require.Equal(t, 3, cfg.Voice.Attempts)
 	require.Equal(t, 2*time.Second, cfg.Voice.RetryDelay)
+	require.Equal(t, TextFallback, cfg.Voice.Text,
+		"a peer who forbids voice messages must still get the page")
+}
+
+func TestTextModeFromConfig(t *testing.T) {
+	cfg, _, err := Load(writeYAML(t, minimalConfig+"voice:\n  text: always\n"))
+	require.NoError(t, err)
+	require.Equal(t, TextAlways, cfg.Voice.Text)
+}
+
+func TestTextModeRejectsUnknown(t *testing.T) {
+	_, _, err := Load(writeYAML(t, minimalConfig+"voice:\n  text: maybe\n"))
+	require.Error(t, err)
 }
 
 func TestVoiceModeFromConfig(t *testing.T) {

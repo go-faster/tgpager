@@ -135,6 +135,12 @@ func (s *Speaker) Speak(ctx context.Context, payload alertmanager.WebhookPayload
 	return audio.Spec{Segments: []string{s.tone, speech}, Repeat: s.repeat}
 }
 
+// Text renders the alert as the message that accompanies, or stands in for,
+// the voice message. It is the same sentence the speech says.
+func (s *Speaker) Text(payload alertmanager.WebhookPayload) (string, error) {
+	return s.tmpl.Render(payload)
+}
+
 func (s *Speaker) speech(ctx context.Context, payload alertmanager.WebhookPayload) (path string, err error) {
 	ctx, span := s.tracer.Start(ctx, "tts.Speak")
 	defer func() {

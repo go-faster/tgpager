@@ -13,6 +13,7 @@ type metrics struct {
 	attempts metric.Int64Counter
 	duration metric.Float64Histogram
 	voice    metric.Int64Counter
+	text     metric.Int64Counter
 }
 
 func newMetrics(mp metric.MeterProvider) (*metrics, error) {
@@ -37,7 +38,13 @@ func newMetrics(mp metric.MeterProvider) (*metrics, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &metrics{attempts: attempts, duration: duration, voice: voice}, nil
+	text, err := meter.Int64Counter("tgpager.text.messages",
+		metric.WithDescription("Text messages sent by outcome"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &metrics{attempts: attempts, duration: duration, voice: voice, text: text}, nil
 }
 
 func outcome(err error) attribute.KeyValue {
