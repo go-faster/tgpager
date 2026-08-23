@@ -430,6 +430,19 @@
             "null"
           ]
         },
+        "text": {
+          "default": "fallback",
+          "description": "When to also send the alert as a plain text message: never, only when the voice message could not be delivered, or every time. Text needs no privacy permission, so the fallback still records a page the peer forbids voice for.",
+          "enum": [
+            "off",
+            "fallback",
+            "always"
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "timeout": {
           "default": "1m0s",
           "description": "How long to spend rendering and uploading before giving up.",
